@@ -36,8 +36,9 @@ export default function SplitStep({
   const unclaimed = result.unassignedItems.length;
 
   return (
-    <>
-      <Section title="People" footer="Tap a name to rename it.">
+    // Wide screens: people stay pinned on the left while items scroll on the right.
+    <div className="lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start lg:gap-8">
+      <Section title="People" footer="Tap a name to rename it." className="lg:sticky lg:top-24">
         {state.diners.map((d) => (
           <div key={d.id} className="flex items-center gap-2 pl-4 pr-2">
             <input
@@ -176,6 +177,6 @@ export default function SplitStep({
           })}
         </Section>
       )}
-    </>
+    </div>
   );
 }
