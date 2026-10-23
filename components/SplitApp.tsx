@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { STEPS, useCheck, type Step } from "@/lib/store";
 import { computeSplit } from "@/lib/split";
 import { parseReceiptText } from "@/lib/parser";
+import { analyzeTax } from "@/lib/taxcheck";
+import { rememberTaxRate, typicalTaxRatePercent } from "@/lib/taxmemory";
 import type { OcrProgress } from "@/lib/ocr";
 import { Icon, Money, haptic } from "./ui";
 import ScanStep from "./ScanStep";
@@ -27,6 +29,22 @@ export default function SplitApp() {
     () => computeSplit(state.items, state.diners, state.taxCents, state.tip),
     [state.items, state.diners, state.taxCents, state.tip],
   );
+
+  // Read after mount so the server render and first client render match.
+  const [typicalRate, setTypicalRate] = useState<number | null>(null);
+  useEffect(() => setTypicalRate(typicalTaxRatePercent()), []);
+
+  const taxInsight = useMemo(
+    () => analyzeTax(state.items, state.taxCents, state.printedTaxRatePercent, state.printedTaxRatePercent ? null : typicalRate),
+    [state.items, state.taxCents, state.printedTaxRatePercent, typicalRate],
+  );
+
+  // A check that reaches Tip & Pay with a normal rate teaches the app the local rate.
+  useEffect(() => {
+    if (state.step === "totals" && taxInsight.status === "ok" && taxInsight.rate !== null && state.items[0]) {
+      rememberTaxRate(state.items[0].id, taxInsight.rate);
+    }
+  }, [state.step, taxInsight, state.items]);
 
   const setPhoto = useCallback((url: string | null) => {
     if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
@@ -81,6 +99,7 @@ export default function SplitApp() {
           taxCents: parsed.taxCents,
           subtotalCents: parsed.subtotalCents,
           totalCents: parsed.totalCents,
+          taxRatePercent: parsed.taxRatePercent,
           drinksTaxed: parsed.drinksTaxed,
         });
         setScan({ phase: "idle" });
@@ -157,21 +176,23 @@ export default function SplitApp() {
     setScan({ phase: "idle" });
     setPhoto(null);
     dispatch({ type: "reset" });
+    setTypicalRate(typicalTaxRatePercent());
     haptic(10);
   }, [dispatch, setPhoto, state.items.length]);
 
   const scanning = scan.phase === "working";
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-xl flex-col">
-      <header className="material sticky top-0 z-20 border-b border-sep px-4 pb-3 pt-[calc(var(--safe-top)+0.5rem)]">
-        <div className="flex items-center justify-between">
-          <h1 className="text-[28px] font-bold tracking-tight">Split Check</h1>
-          <button type="button" onClick={reset} className="link text-[17px]" disabled={scanning}>
+    <div className="flex min-h-dvh w-full flex-col">
+      <header className="material sticky top-0 z-20 border-b border-sep pb-3 pt-[calc(var(--safe-top)+0.5rem)] lg:py-3">
+        <div className="mx-auto max-w-xl px-4 lg:flex lg:max-w-6xl lg:items-center lg:gap-8 lg:px-8">
+        <div className="flex items-center justify-between lg:shrink-0">
+          <h1 className="text-[28px] font-bold tracking-tight lg:text-[22px]">Split Check</h1>
+          <button type="button" onClick={reset} className="link text-[17px] lg:hidden" disabled={scanning}>
             New
           </button>
         </div>
-        <div role="group" aria-label="Steps" className="seg mt-2">
+        <div role="group" aria-label="Steps" className="seg mt-2 lg:mt-0 lg:w-[440px]">
           {STEPS.map((s, i) => (
             <button
               key={s.id}
@@ -185,13 +206,36 @@ export default function SplitApp() {
             </button>
           ))}
         </div>
+        <div className="ml-auto hidden items-center gap-3 lg:flex">
+          <DesktopActions
+            step={state.step}
+            itemCount={state.items.length}
+            dinerCount={state.diners.length}
+            unassigned={result.unassignedItems.length}
+            grandTotal={result.grandTotalCents}
+            go={go}
+          />
+          <button type="button" onClick={reset} className="link px-2 text-[15px]" disabled={scanning}>
+            New Check
+          </button>
+        </div>
+        </div>
       </header>
 
-      <main className="flex-1 px-4 pb-[calc(var(--safe-bottom)+8rem)] pt-6">
+      <main className="mx-auto w-full max-w-xl flex-1 px-4 pb-[calc(var(--safe-bottom)+8rem)] pt-6 lg:max-w-6xl lg:px-8 lg:pb-16 lg:pt-8">
         {state.step === "scan" && (
-          <ScanStep scan={scan} photoUrl={photoUrl} hasItems={state.items.length > 0} onCancel={cancelScan} onResume={() => go("items")} />
+          <ScanStep
+            scan={scan}
+            photoUrl={photoUrl}
+            hasItems={state.items.length > 0}
+            onCancel={cancelScan}
+            onResume={() => go("items")}
+            onFile={handleFile}
+            onPaste={pasteFromClipboard}
+            onManual={manual}
+          />
         )}
-        {state.step === "items" && <ItemsStep state={state} dispatch={dispatch} photoUrl={photoUrl} />}
+        {state.step === "items" && <ItemsStep state={state} dispatch={dispatch} photoUrl={photoUrl} taxInsight={taxInsight} />}
         {state.step === "split" && <SplitStep state={state} dispatch={dispatch} result={result} />}
         {state.step === "totals" && <TotalsStep state={state} dispatch={dispatch} result={result} />}
       </main>
@@ -253,7 +297,7 @@ function BottomBar({
   );
 
   return (
-    <div className="material fixed inset-x-0 bottom-0 z-30 border-t border-sep pb-[calc(var(--safe-bottom)+0.75rem)] pt-3">
+    <div className="material fixed inset-x-0 bottom-0 z-30 border-t border-sep pb-[calc(var(--safe-bottom)+0.75rem)] pt-3 lg:hidden">
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} aria-hidden onChange={pick} />
       <input ref={libraryRef} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden onChange={pick} />
       <div className="mx-auto max-w-xl px-4">
@@ -307,4 +351,59 @@ function BottomBar({
       </div>
     </div>
   );
+}
+
+/** Back / Next for wide screens, shown in the top bar instead of the bottom bar. */
+function DesktopActions({
+  step,
+  itemCount,
+  dinerCount,
+  unassigned,
+  grandTotal,
+  go,
+}: {
+  step: Step;
+  itemCount: number;
+  dinerCount: number;
+  unassigned: number;
+  grandTotal: number;
+  go: (s: Step) => void;
+}) {
+  const small = "min-h-9 rounded-lg px-4 text-[15px]";
+  const back = (to: Step) => (
+    <button type="button" className={`btn btn-gray ${small}`} onClick={() => go(to)}>
+      <Icon name="chevron-left" className="h-4 w-4" />
+      Back
+    </button>
+  );
+  if (step === "items") {
+    return (
+      <>
+        {back("scan")}
+        <button type="button" className={`btn btn-filled ${small}`} disabled={itemCount === 0} onClick={() => go("split")}>
+          Next: Who Had What
+        </button>
+      </>
+    );
+  }
+  if (step === "split") {
+    return (
+      <>
+        {back("items")}
+        <button type="button" className={`btn btn-filled ${small}`} disabled={dinerCount === 0} onClick={() => go("totals")}>
+          {dinerCount === 0 ? "Add People First" : unassigned > 0 ? `Next: Tip (${unassigned} unclaimed)` : "Next: Tip"}
+        </button>
+      </>
+    );
+  }
+  if (step === "totals") {
+    return (
+      <>
+        {back("split")}
+        <span className="text-[15px] text-label-2">Total</span>
+        <Money cents={grandTotal} className="text-[20px] font-semibold" />
+      </>
+    );
+  }
+  return null;
 }

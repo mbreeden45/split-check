@@ -4,16 +4,19 @@
 import { useState, type Dispatch } from "react";
 import type { Action, CheckState } from "@/lib/store";
 import type { ItemKind } from "@/lib/types";
+import type { TaxInsight } from "@/lib/taxcheck";
 import { Icon, Money, MoneyInput, Row, Section, Segmented, haptic } from "./ui";
 
 export default function ItemsStep({
   state,
   dispatch,
   photoUrl,
+  taxInsight,
 }: {
   state: CheckState;
   dispatch: Dispatch<Action>;
   photoUrl: string | null;
+  taxInsight: TaxInsight;
 }) {
   const [showPhoto, setShowPhoto] = useState(false);
   const [focusLast, setFocusLast] = useState(false);
@@ -31,10 +34,13 @@ export default function ItemsStep({
     setFocusLast(true);
   };
 
+  const side = "lg:col-start-2";
+
   return (
-    <>
+    // Wide screens: items on the left, everything else stacked on the right.
+    <div className="lg:grid lg:grid-flow-dense lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-x-8">
       {photoUrl && (
-        <div className="-mt-3 mb-4">
+        <div className={`-mt-3 mb-4 lg:mt-0 ${side}`}>
           <button type="button" className="link px-4" onClick={() => setShowPhoto((v) => !v)} aria-expanded={showPhoto}>
             {showPhoto ? "Hide Photo" : "Show Photo"}
           </button>
@@ -46,7 +52,7 @@ export default function ItemsStep({
         </div>
       )}
 
-      <Section>
+      <Section className={side}>
         <label className="flex items-center gap-3 px-4">
           <span className="shrink-0">Place</span>
           <input
@@ -60,9 +66,10 @@ export default function ItemsStep({
         </label>
       </Section>
 
-      {state.notice && <p className="group mb-8 px-4 py-3 text-[15px]">{state.notice}</p>}
+      {state.notice && <p className={`group mb-8 px-4 py-3 text-[15px] ${side}`}>{state.notice}</p>}
 
       <Section
+        className="lg:col-start-1 lg:row-[span_20/span_20]"
         title="Items"
         footer="Check each line against the receipt. Taxable items share the tax. Mark drinks whose price already includes tax as Tax Included."
       >
@@ -70,8 +77,8 @@ export default function ItemsStep({
           <p className="px-4 py-3 text-label-2">No items found. Add them below.</p>
         )}
         {state.items.map((item, idx) => (
-          <div key={item.id} className="px-4 pb-3 pt-1">
-            <div className="flex items-center gap-2">
+          <div key={item.id} className="px-4 pb-3 pt-1 lg:flex lg:items-center lg:gap-4 lg:py-1">
+            <div className="flex items-center gap-2 lg:min-w-0 lg:flex-1">
               <input
                 aria-label="Quantity"
                 className="h-8 w-9 shrink-0 rounded-md bg-fill text-center text-[15px] tabular-nums text-label"
@@ -101,7 +108,7 @@ export default function ItemsStep({
                 className="w-28 shrink-0"
               />
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 lg:shrink-0">
               <Segmented
                 label="Tax type"
                 value={item.kind}
@@ -110,7 +117,7 @@ export default function ItemsStep({
                   { value: "food", label: "Taxable" },
                   { value: "drink", label: "Tax Included" },
                 ]}
-                className="flex-1"
+                className="flex-1 lg:w-60 lg:flex-none"
               />
               <button
                 type="button"
@@ -134,7 +141,12 @@ export default function ItemsStep({
         </button>
       </Section>
 
+      {taxInsight.message && !state.taxHintDismissed && (
+        <TaxHint insight={taxInsight} dispatch={dispatch} className={side} />
+      )}
+
       <Section
+        className={side}
         title="Totals"
         footer={
           mismatch !== null ? (
@@ -157,10 +169,48 @@ export default function ItemsStep({
           <span>Tax</span>
           <MoneyInput label="Tax" cents={state.taxCents} onChange={(cents) => dispatch({ type: "tax", cents })} className="w-32 text-accent" />
         </label>
+        {taxInsight.rate !== null && (
+          <Row label="Tax Rate">
+            <span className={taxInsight.status === "ok" ? "" : "font-semibold text-warn"}>
+              {(taxInsight.rate * 100).toFixed(1)}%
+              {state.printedTaxRatePercent ? ` (receipt says ${state.printedTaxRatePercent}%)` : ""}
+            </span>
+          </Row>
+        )}
         <Row label="Total Before Tip" strong>
           <Money cents={itemsTotal + state.taxCents} />
         </Row>
       </Section>
-    </>
+    </div>
+  );
+}
+
+function TaxHint({ insight, dispatch, className = "" }: { insight: TaxInsight; dispatch: Dispatch<Action>; className?: string }) {
+  const s = insight.suggestion;
+  const label = !s ? null : s.direction === "included" ? "Mark Tax Included" : s.direction === "taxable" ? "Mark Taxable" : "Apply Fix";
+  return (
+    <div role="status" className={`group mb-8 ${className}`}>
+      <p className="px-4 pb-2 pt-3 text-[15px]">
+        <span className="font-semibold text-warn">Check the tax. </span>
+        {insight.message}
+      </p>
+      <div className="flex items-center gap-4 border-t border-sep px-4">
+        {s && label && (
+          <button
+            type="button"
+            className="link font-semibold"
+            onClick={() => {
+              haptic([8, 30, 8]);
+              dispatch({ type: "applyTaxSuggestion", includedIds: s.includedIds });
+            }}
+          >
+            {label}
+          </button>
+        )}
+        <button type="button" className="link ml-auto text-label-2" onClick={() => dispatch({ type: "dismissTaxHint" })}>
+          Ignore
+        </button>
+      </div>
+    </div>
   );
 }

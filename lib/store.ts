@@ -21,6 +21,10 @@ export interface CheckState {
   /** Values read off the receipt, used only to flag mismatches. */
   printedSubtotalCents: number | null;
   printedTotalCents: number | null;
+  /** Tax rate printed on the receipt, e.g. 10.5. */
+  printedTaxRatePercent: number | null;
+  /** The person tapped Ignore on the tax hint for this check. */
+  taxHintDismissed: boolean;
   /** One-line explanation of an automatic decision made while reading the receipt. */
   notice: string | null;
   tip: TipConfig;
@@ -34,6 +38,8 @@ export const initialState: CheckState = {
   taxCents: 0,
   printedSubtotalCents: null,
   printedTotalCents: null,
+  printedTaxRatePercent: null,
+  taxHintDismissed: false,
   notice: null,
   tip: { basis: "post", mode: "percent", percent: 20, amountCents: 0 },
 };
@@ -48,8 +54,11 @@ export type Action =
       taxCents: number | null;
       subtotalCents: number | null;
       totalCents: number | null;
+      taxRatePercent: number | null;
       drinksTaxed: boolean;
     }
+  | { type: "applyTaxSuggestion"; includedIds: string[] }
+  | { type: "dismissTaxHint" }
   | { type: "addItem"; kind?: ItemKind }
   | { type: "updateItem"; id: string; patch: Partial<Pick<LineItem, "name" | "qty" | "priceCents" | "kind">> }
   | { type: "removeItem"; id: string }
@@ -96,10 +105,21 @@ export function reducer(state: CheckState, action: Action): CheckState {
         taxCents: action.taxCents ?? 0,
         printedSubtotalCents: action.subtotalCents,
         printedTotalCents: action.totalCents,
+        printedTaxRatePercent: action.taxRatePercent,
+        taxHintDismissed: false,
         notice: action.drinksTaxed
           ? "The tax on this receipt covers drinks too, so every item is marked Taxable."
           : null,
       };
+    case "applyTaxSuggestion": {
+      const included = new Set(action.includedIds);
+      return {
+        ...state,
+        items: state.items.map((i) => ({ ...i, kind: included.has(i.id) ? "drink" : "food" })),
+      };
+    }
+    case "dismissTaxHint":
+      return { ...state, taxHintDismissed: true };
     case "addItem":
       return { ...state, items: [...state.items, newItem({ kind: action.kind ?? "food" })] };
     case "updateItem":

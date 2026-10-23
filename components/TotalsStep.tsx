@@ -28,7 +28,9 @@ export default function TotalsStep({
   const choice: Choice = custom ? "custom" : (String(tip.percent) as Choice);
 
   return (
-    <>
+    // Wide screens: tip and check summary pinned on the left, people in two columns on the right.
+    <div className="lg:grid lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start lg:gap-8">
+      <div className="lg:sticky lg:top-24">
       <Section
         title="Tip"
         footer="Most card slips calculate tip on the total after tax. Each person's tip follows what they ordered."
@@ -116,12 +118,21 @@ export default function TotalsStep({
         </p>
       )}
 
-      {result.diners.map((b) => (
-        <PersonSection key={b.diner.id} b={b} tip={tip} venue={state.venue} />
-      ))}
+      <div className="hidden lg:block">
+        <ShareAll result={result} venue={state.venue} />
+      </div>
+      </div>
 
-      <ShareAll result={result} venue={state.venue} />
-    </>
+      <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6">
+        {result.diners.map((b) => (
+          <PersonSection key={b.diner.id} b={b} tip={tip} venue={state.venue} />
+        ))}
+      </div>
+
+      <div className="lg:hidden">
+        <ShareAll result={result} venue={state.venue} />
+      </div>
+    </div>
   );
 }
 
