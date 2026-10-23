@@ -72,7 +72,11 @@ export default function ScanStep({
         <Icon name="doc" className="h-14 w-14 text-label-3" />
         <h2 className="mt-4 text-[22px] font-semibold">Scan a Receipt</h2>
         <p className="mt-2 max-w-xs text-[15px] text-label-2">
-          Take a photo and the items are read on your phone. The photo is never uploaded.
+          Take a photo, pick one from your library, or paste a screenshot. The items are read on your device and
+          the image is never uploaded.
+        </p>
+        <p className="mt-3 hidden text-[13px] text-label-2 [@media(pointer:fine)]:block">
+          You can also press Ctrl+V or ⌘V to paste.
         </p>
       </div>
     </section>

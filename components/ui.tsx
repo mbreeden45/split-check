@@ -197,7 +197,7 @@ export function Row({ label, children, strong }: { label: ReactNode; children?: 
   );
 }
 
-type IconName = "camera" | "image" | "plus" | "trash" | "copy" | "check" | "chevron-left" | "doc";
+type IconName = "camera" | "image" | "plus" | "trash" | "copy" | "check" | "chevron-left" | "doc" | "paste";
 
 export function Icon({ name, className = "h-5 w-5" }: { name: IconName; className?: string }) {
   const common = {
@@ -255,6 +255,13 @@ export function Icon({ name, className = "h-5 w-5" }: { name: IconName; classNam
       return (
         <svg {...common} strokeWidth={2.4}>
           <path d="M15 5l-7 7 7 7" />
+        </svg>
+      );
+    case "paste":
+      return (
+        <svg {...common}>
+          <path d="M9 4.5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-12a2 2 0 0 0-2-2h-2" />
+          <rect x="9" y="3" width="6" height="3" rx="1" />
         </svg>
       );
     case "doc":
