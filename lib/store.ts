@@ -9,7 +9,7 @@ export const STEPS: { id: Step; label: string }[] = [
   { id: "scan", label: "Scan" },
   { id: "items", label: "Items" },
   { id: "split", label: "Split" },
-  { id: "totals", label: "Pay Up" },
+  { id: "totals", label: "Tip & Pay" },
 ];
 
 export interface CheckState {

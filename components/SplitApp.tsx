@@ -119,47 +119,36 @@ export default function SplitApp() {
     haptic(10);
   }, [dispatch, setPhoto, state.items.length]);
 
-  const stepIndex = STEPS.findIndex((s) => s.id === state.step);
   const scanning = scan.phase === "working";
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-xl flex-col">
-      <header className="sticky top-0 z-20 border-b-[1.5px] border-ink bg-paper/95 px-4 pb-2 pt-[calc(var(--safe-top)+0.75rem)] backdrop-blur-[2px]">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-xl font-black uppercase tracking-tight [font-stretch:75%]">Split Check</h1>
-            <span className="font-mono text-[0.6875rem] text-stamp">No. {String(state.items.length).padStart(3, "0")}</span>
-          </div>
-          <button type="button" onClick={reset} className="btn btn-ghost min-h-11 px-3 text-sm">
-            New check
+      <header className="material sticky top-0 z-20 border-b border-sep px-4 pb-3 pt-[calc(var(--safe-top)+0.5rem)]">
+        <div className="flex items-center justify-between">
+          <h1 className="text-[28px] font-bold tracking-tight">Split Check</h1>
+          <button type="button" onClick={reset} className="link text-[17px]" disabled={scanning}>
+            New
           </button>
         </div>
-        <nav aria-label="Steps" className="mt-2 grid grid-cols-4 gap-1">
-          {STEPS.map((s, i) => {
-            const active = s.id === state.step;
-            const disabled = scanning || (i > 0 && state.items.length === 0);
-            return (
-              <button
-                key={s.id}
-                type="button"
-                disabled={disabled}
-                aria-current={active ? "step" : undefined}
-                onClick={() => go(s.id)}
-                className={`flex min-h-11 flex-col items-start justify-center border-t-[3px] px-1 text-left transition-colors disabled:opacity-35 ${
-                  active ? "border-forest text-ink" : i < stepIndex ? "border-ink/60 text-ink-soft" : "border-rule-warm text-ink-faint"
-                }`}
-              >
-                <span className="font-mono text-[0.625rem] tabular-nums">0{i + 1}</span>
-                <span className="text-[0.8125rem] font-bold leading-none">{s.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+        <div role="group" aria-label="Steps" className="seg mt-2">
+          {STEPS.map((s, i) => (
+            <button
+              key={s.id}
+              type="button"
+              aria-pressed={s.id === state.step}
+              disabled={scanning || (i > 0 && state.items.length === 0)}
+              onClick={() => go(s.id)}
+              className="disabled:text-label-3"
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
       </header>
 
-      <main className="flex-1 px-4 pb-[calc(var(--safe-bottom)+7.5rem)] pt-5">
+      <main className="flex-1 px-4 pb-[calc(var(--safe-bottom)+8rem)] pt-6">
         {state.step === "scan" && (
-          <ScanStep scan={scan} photoUrl={photoUrl} hasItems={state.items.length > 0} onCancel={cancelScan} onManual={manual} onResume={() => go("items")} />
+          <ScanStep scan={scan} photoUrl={photoUrl} hasItems={state.items.length > 0} onCancel={cancelScan} onResume={() => go("items")} />
         )}
         {state.step === "items" && <ItemsStep state={state} dispatch={dispatch} photoUrl={photoUrl} />}
         {state.step === "split" && <SplitStep state={state} dispatch={dispatch} result={result} />}
@@ -211,21 +200,28 @@ function BottomBar({
     onFile(f);
   };
 
+  const back = (to: Step, label: string) => (
+    <button type="button" className="btn btn-gray w-[50px] px-0" onClick={() => go(to)} aria-label={`Back to ${label}`}>
+      <Icon name="chevron-left" />
+    </button>
+  );
+
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t-[1.5px] border-ink bg-card/97 pb-[calc(var(--safe-bottom)+0.75rem)] pt-3 shadow-[0_-6px_0_0_rgba(24,24,27,0.04)]">
+    <div className="material fixed inset-x-0 bottom-0 z-30 border-t border-sep pb-[calc(var(--safe-bottom)+0.75rem)] pt-3">
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} aria-hidden onChange={pick} />
       <input ref={libraryRef} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden onChange={pick} />
       <div className="mx-auto max-w-xl px-4">
         {step === "scan" && (
-          <div className="grid grid-cols-[1fr_auto] gap-2">
-            <button type="button" className="btn btn-primary min-h-14 text-base" disabled={scanning} onClick={() => cameraRef.current?.click()}>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" className="btn btn-filled" disabled={scanning} onClick={() => cameraRef.current?.click()}>
               <Icon name="camera" />
-              Snap Receipt
+              Take Photo
             </button>
-            <button type="button" className="btn min-h-14 px-4" disabled={scanning} onClick={() => libraryRef.current?.click()} aria-label="Choose a photo from your library">
+            <button type="button" className="btn btn-tinted" disabled={scanning} onClick={() => libraryRef.current?.click()}>
               <Icon name="image" />
+              Library
             </button>
-            <button type="button" className="btn btn-ghost col-span-2 min-h-11 text-[0.9375rem] underline decoration-2 underline-offset-4" disabled={scanning} onClick={onManual}>
+            <button type="button" className="btn btn-gray col-span-2" disabled={scanning} onClick={onManual}>
               Skip OCR / Add Items Manually
             </button>
           </div>
@@ -233,36 +229,28 @@ function BottomBar({
 
         {step === "items" && (
           <div className="grid grid-cols-[auto_1fr] gap-2">
-            <button type="button" className="btn min-h-14 px-4" onClick={() => go("scan")} aria-label="Back to scan">
-              <Icon name="arrow-left" />
-            </button>
-            <button type="button" className="btn btn-primary min-h-14 text-base" disabled={itemCount === 0} onClick={() => go("split")}>
-              Looks Right, Split It
-              <Icon name="arrow-right" />
+            {back("scan", "scan")}
+            <button type="button" className="btn btn-filled" disabled={itemCount === 0} onClick={() => go("split")}>
+              Next: Who Had What
             </button>
           </div>
         )}
 
         {step === "split" && (
           <div className="grid grid-cols-[auto_1fr] gap-2">
-            <button type="button" className="btn min-h-14 px-4" onClick={() => go("items")} aria-label="Back to items">
-              <Icon name="arrow-left" />
-            </button>
-            <button type="button" className="btn btn-primary min-h-14 text-base" disabled={dinerCount === 0} onClick={() => go("totals")}>
-              {dinerCount === 0 ? "Add a diner first" : unassigned > 0 ? `Tip & Totals (${unassigned} left)` : "Tip & Totals"}
-              <Icon name="arrow-right" />
+            {back("items", "items")}
+            <button type="button" className="btn btn-filled" disabled={dinerCount === 0} onClick={() => go("totals")}>
+              {dinerCount === 0 ? "Add People First" : unassigned > 0 ? `Next: Tip (${unassigned} unclaimed)` : "Next: Tip"}
             </button>
           </div>
         )}
 
         {step === "totals" && (
           <div className="grid grid-cols-[auto_1fr] items-center gap-3">
-            <button type="button" className="btn min-h-14 px-4" onClick={() => go("split")} aria-label="Back to split">
-              <Icon name="arrow-left" />
-            </button>
-            <div className="flex min-h-14 items-center justify-between rounded-md border-2 border-ink bg-ink px-4 text-card">
-              <span className="label text-card/70">Check total</span>
-              <Money cents={grandTotal} className="text-xl font-semibold" />
+            {back("split", "split")}
+            <div className="flex items-baseline justify-between px-1">
+              <span className="text-label-2">Total</span>
+              <Money cents={grandTotal} className="text-[22px] font-semibold" />
             </div>
           </div>
         )}
