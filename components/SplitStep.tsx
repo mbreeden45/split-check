@@ -110,7 +110,7 @@ export default function SplitStep({
                   <Money cents={item.priceCents} />
                 </div>
                 <p className={`text-[13px] ${count === 0 ? "text-danger" : "text-label-2"}`}>
-                  {item.kind === "food" ? "Food" : "Drink"}
+                  {item.kind === "food" ? "Taxable" : "Tax included"}
                   {" · "}
                   {count === 0 ? "Not claimed" : count === 1 ? "1 person" : `Split ${count} ways`}
                 </p>

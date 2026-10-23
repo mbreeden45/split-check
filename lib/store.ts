@@ -21,6 +21,8 @@ export interface CheckState {
   /** Values read off the receipt, used only to flag mismatches. */
   printedSubtotalCents: number | null;
   printedTotalCents: number | null;
+  /** One-line explanation of an automatic decision made while reading the receipt. */
+  notice: string | null;
   tip: TipConfig;
 }
 
@@ -32,6 +34,7 @@ export const initialState: CheckState = {
   taxCents: 0,
   printedSubtotalCents: null,
   printedTotalCents: null,
+  notice: null,
   tip: { basis: "post", mode: "percent", percent: 20, amountCents: 0 },
 };
 
@@ -45,6 +48,7 @@ export type Action =
       taxCents: number | null;
       subtotalCents: number | null;
       totalCents: number | null;
+      drinksTaxed: boolean;
     }
   | { type: "addItem"; kind?: ItemKind }
   | { type: "updateItem"; id: string; patch: Partial<Pick<LineItem, "name" | "qty" | "priceCents" | "kind">> }
@@ -92,6 +96,9 @@ export function reducer(state: CheckState, action: Action): CheckState {
         taxCents: action.taxCents ?? 0,
         printedSubtotalCents: action.subtotalCents,
         printedTotalCents: action.totalCents,
+        notice: action.drinksTaxed
+          ? "The tax on this receipt covers drinks too, so every item is marked Taxable."
+          : null,
       };
     case "addItem":
       return { ...state, items: [...state.items, newItem({ kind: action.kind ?? "food" })] };

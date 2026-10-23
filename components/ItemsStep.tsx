@@ -60,9 +60,11 @@ export default function ItemsStep({
         </label>
       </Section>
 
+      {state.notice && <p className="group mb-8 px-4 py-3 text-[15px]">{state.notice}</p>}
+
       <Section
         title="Items"
-        footer="Check each line against the receipt. Food gets tax added. Drinks already include tax."
+        footer="Check each line against the receipt. Taxable items share the tax. Mark drinks whose price already includes tax as Tax Included."
       >
         {state.items.length === 0 && (
           <p className="px-4 py-3 text-label-2">No items found. Add them below.</p>
@@ -105,8 +107,8 @@ export default function ItemsStep({
                 value={item.kind}
                 onChange={(kind) => dispatch({ type: "updateItem", id: item.id, patch: { kind } })}
                 options={[
-                  { value: "food", label: "Food (Taxable)" },
-                  { value: "drink", label: "Drink (Tax Incl.)" },
+                  { value: "food", label: "Taxable" },
+                  { value: "drink", label: "Tax Included" },
                 ]}
                 className="flex-1"
               />
@@ -125,10 +127,10 @@ export default function ItemsStep({
           </div>
         ))}
         <button type="button" className="link w-full px-4" onClick={() => add("food")}>
-          <Icon name="plus" /> Add Food
+          <Icon name="plus" /> Add Item
         </button>
         <button type="button" className="link w-full px-4" onClick={() => add("drink")}>
-          <Icon name="plus" /> Add Drink
+          <Icon name="plus" /> Add Tax-Included Item
         </button>
       </Section>
 
@@ -141,14 +143,14 @@ export default function ItemsStep({
               <Money cents={Math.abs(mismatch)} /> {mismatch > 0 ? "short. An item may be missing." : "over. Check for duplicates."}
             </span>
           ) : (
-            "Tax is only split among people who ordered food."
+            "Tax is only split among people with taxable items."
           )
         }
       >
-        <Row label="Food">
+        <Row label="Taxable">
           <Money cents={foodTotal} />
         </Row>
-        <Row label="Drinks">
+        <Row label="Tax Included">
           <Money cents={itemsTotal - foodTotal} />
         </Row>
         <label className="flex min-h-11 items-center justify-between gap-3 px-4">

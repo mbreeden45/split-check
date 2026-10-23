@@ -1,7 +1,7 @@
 # Split Check
 
 Snap a receipt, fix the lines, tap who had what, and copy a Venmo note for each person.
-Food tax only lands on the people who ate food. Drinks that already include tax stay clean.
+Tax only lands on the people who ordered taxable items. Drinks whose price already includes tax stay clean.
 Tip follows what each person ordered.
 
 - **Zero AI tokens.** OCR runs in the browser with `tesseract.js` (WebAssembly), loaded on demand.
@@ -14,13 +14,13 @@ Stack: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4.
 
 | Piece | Rule |
 | --- | --- |
-| Items | Each line is **Food (Taxable)** or **Drink (Tax Included)**. Tap one name to claim it, several to split evenly, or switch to **Shares** for uneven splits (for example 2 of 3 beers). |
-| Food tax | `myFoodSubtotal / totalFoodSubtotal * totalTax`. Drink only diners pay $0.00 tax. If there is tax but no food lines, tax falls back to all items and the app warns you. |
+| Items | Each line is **Taxable** or **Tax Included** (for drinks whose price already includes tax). Tap one name to claim it, several to split evenly, or switch to **Shares** for uneven splits (for example 2 of 3 beers). |
+| Tax | `myTaxableSubtotal / totalTaxableSubtotal * totalTax`. People with only tax-included drinks pay $0.00 tax. If there is tax but no taxable lines, tax falls back to all items and the app warns you. |
 | Tip | 18%, 20%, 25%, custom % or custom $. Basis defaults to **after tax** (how Toast and most modern POS slips calculate it); switch to before tax if you like. The tip is split by each diner's item subtotal. |
 | Rounding | Every split uses the largest remainder method in whole cents, so the per person totals always add up to the check total exactly. |
 | Unclaimed items | Shown in red with the exact amount (items plus their tax and tip) that nobody is covering yet. |
 
-The OCR parser (`lib/parser.ts`) matches lines shaped like `(\d+)?\s*(.+?)\s+\$?(\d+\.\d{2})`, hardened for real OCR output (`2x` quantities, `S` read as `$`, comma decimals, trailing tax flags). It pulls Subtotal, Tax and Total out as summary values instead of items, skips payment and suggested tip lines, and guesses Food vs Drink from the name. You always get an editable review list afterward.
+Before OCR, the photo is cropped to the paper (receipts are bright and colorless, tables usually are not) and its lighting is flattened so shadows and faint thermal ink read cleanly. The parser (`lib/parser.ts`) matches lines shaped like `(\d+)?\s*(.+?)\s+\$?(\d+\.\d{2})`, hardened for real OCR output (`2x` quantities, `S` read as `$`, comma decimals, a little junk after the price). Add-on lines such as `-American Cheese 1.34` are folded into the item above. It reads Subtotal, Tax and Total as summary values and stops at Total, so payment lines and tax summaries are never counted. Drinks are guessed from the name, but if the printed tax only makes sense when drinks were taxed too (checked against the printed rate when there is one), every item is marked Taxable and the app says so. You always get an editable review list afterward.
 
 ## Local development
 
