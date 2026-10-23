@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { STEPS, useCheck, type Step } from "@/lib/store";
 import { computeSplit } from "@/lib/split";
 import { parseReceiptText } from "@/lib/parser";
+import { analyzeTax } from "@/lib/taxcheck";
+import { rememberTaxRate, typicalTaxRatePercent } from "@/lib/taxmemory";
 import type { OcrProgress } from "@/lib/ocr";
 import { Icon, Money, haptic } from "./ui";
 import ScanStep from "./ScanStep";
@@ -27,6 +29,22 @@ export default function SplitApp() {
     () => computeSplit(state.items, state.diners, state.taxCents, state.tip),
     [state.items, state.diners, state.taxCents, state.tip],
   );
+
+  // Read after mount so the server render and first client render match.
+  const [typicalRate, setTypicalRate] = useState<number | null>(null);
+  useEffect(() => setTypicalRate(typicalTaxRatePercent()), []);
+
+  const taxInsight = useMemo(
+    () => analyzeTax(state.items, state.taxCents, state.printedTaxRatePercent, state.printedTaxRatePercent ? null : typicalRate),
+    [state.items, state.taxCents, state.printedTaxRatePercent, typicalRate],
+  );
+
+  // A check that reaches Tip & Pay with a normal rate teaches the app the local rate.
+  useEffect(() => {
+    if (state.step === "totals" && taxInsight.status === "ok" && taxInsight.rate !== null && state.items[0]) {
+      rememberTaxRate(state.items[0].id, taxInsight.rate);
+    }
+  }, [state.step, taxInsight, state.items]);
 
   const setPhoto = useCallback((url: string | null) => {
     if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
@@ -81,6 +99,7 @@ export default function SplitApp() {
           taxCents: parsed.taxCents,
           subtotalCents: parsed.subtotalCents,
           totalCents: parsed.totalCents,
+          taxRatePercent: parsed.taxRatePercent,
           drinksTaxed: parsed.drinksTaxed,
         });
         setScan({ phase: "idle" });
@@ -157,6 +176,7 @@ export default function SplitApp() {
     setScan({ phase: "idle" });
     setPhoto(null);
     dispatch({ type: "reset" });
+    setTypicalRate(typicalTaxRatePercent());
     haptic(10);
   }, [dispatch, setPhoto, state.items.length]);
 
@@ -191,7 +211,7 @@ export default function SplitApp() {
         {state.step === "scan" && (
           <ScanStep scan={scan} photoUrl={photoUrl} hasItems={state.items.length > 0} onCancel={cancelScan} onResume={() => go("items")} />
         )}
-        {state.step === "items" && <ItemsStep state={state} dispatch={dispatch} photoUrl={photoUrl} />}
+        {state.step === "items" && <ItemsStep state={state} dispatch={dispatch} photoUrl={photoUrl} taxInsight={taxInsight} />}
         {state.step === "split" && <SplitStep state={state} dispatch={dispatch} result={result} />}
         {state.step === "totals" && <TotalsStep state={state} dispatch={dispatch} result={result} />}
       </main>

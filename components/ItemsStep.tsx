@@ -4,16 +4,19 @@
 import { useState, type Dispatch } from "react";
 import type { Action, CheckState } from "@/lib/store";
 import type { ItemKind } from "@/lib/types";
+import type { TaxInsight } from "@/lib/taxcheck";
 import { Icon, Money, MoneyInput, Row, Section, Segmented, haptic } from "./ui";
 
 export default function ItemsStep({
   state,
   dispatch,
   photoUrl,
+  taxInsight,
 }: {
   state: CheckState;
   dispatch: Dispatch<Action>;
   photoUrl: string | null;
+  taxInsight: TaxInsight;
 }) {
   const [showPhoto, setShowPhoto] = useState(false);
   const [focusLast, setFocusLast] = useState(false);
@@ -134,6 +137,10 @@ export default function ItemsStep({
         </button>
       </Section>
 
+      {taxInsight.message && !state.taxHintDismissed && (
+        <TaxHint insight={taxInsight} dispatch={dispatch} />
+      )}
+
       <Section
         title="Totals"
         footer={
@@ -157,10 +164,48 @@ export default function ItemsStep({
           <span>Tax</span>
           <MoneyInput label="Tax" cents={state.taxCents} onChange={(cents) => dispatch({ type: "tax", cents })} className="w-32 text-accent" />
         </label>
+        {taxInsight.rate !== null && (
+          <Row label="Tax Rate">
+            <span className={taxInsight.status === "ok" ? "" : "font-semibold text-warn"}>
+              {(taxInsight.rate * 100).toFixed(1)}%
+              {state.printedTaxRatePercent ? ` (receipt says ${state.printedTaxRatePercent}%)` : ""}
+            </span>
+          </Row>
+        )}
         <Row label="Total Before Tip" strong>
           <Money cents={itemsTotal + state.taxCents} />
         </Row>
       </Section>
     </>
+  );
+}
+
+function TaxHint({ insight, dispatch }: { insight: TaxInsight; dispatch: Dispatch<Action> }) {
+  const s = insight.suggestion;
+  const label = !s ? null : s.direction === "included" ? "Mark Tax Included" : s.direction === "taxable" ? "Mark Taxable" : "Apply Fix";
+  return (
+    <div role="status" className="group mb-8">
+      <p className="px-4 pb-2 pt-3 text-[15px]">
+        <span className="font-semibold text-warn">Check the tax. </span>
+        {insight.message}
+      </p>
+      <div className="flex items-center gap-4 border-t border-sep px-4">
+        {s && label && (
+          <button
+            type="button"
+            className="link font-semibold"
+            onClick={() => {
+              haptic([8, 30, 8]);
+              dispatch({ type: "applyTaxSuggestion", includedIds: s.includedIds });
+            }}
+          >
+            {label}
+          </button>
+        )}
+        <button type="button" className="link ml-auto text-label-2" onClick={() => dispatch({ type: "dismissTaxHint" })}>
+          Ignore
+        </button>
+      </div>
+    </div>
   );
 }
