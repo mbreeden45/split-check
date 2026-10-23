@@ -81,6 +81,7 @@ export default function SplitApp() {
           taxCents: parsed.taxCents,
           subtotalCents: parsed.subtotalCents,
           totalCents: parsed.totalCents,
+          drinksTaxed: parsed.drinksTaxed,
         });
         setScan({ phase: "idle" });
         haptic([10, 40, 10]);

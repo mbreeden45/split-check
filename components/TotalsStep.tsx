@@ -112,7 +112,7 @@ export default function TotalsStep({
       )}
       {result.taxFallback && (
         <p className="group mb-8 px-4 py-3 text-[15px] text-warn">
-          There&apos;s tax but no food items, so tax is split across everything. Mark food lines as Food to fix this.
+          There&apos;s tax but every item is marked Tax Included, so tax is split across everything. Mark the taxed items as Taxable to fix this.
         </p>
       )}
 
