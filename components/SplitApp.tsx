@@ -104,6 +104,46 @@ export default function SplitApp() {
     setPhoto(null);
   }, [setPhoto]);
 
+  // Ctrl+V or Cmd+V anywhere on the scan screen.
+  useEffect(() => {
+    if (state.step !== "scan" || scan.phase === "working") return;
+    const onPaste = (e: ClipboardEvent) => {
+      const image = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith("image/"));
+      if (!image) return;
+      e.preventDefault();
+      void handleFile(image);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [state.step, scan.phase, handleFile]);
+
+  // Paste button. iOS Safari shows its own "Paste" bubble to confirm.
+  const pasteFromClipboard = useCallback(async () => {
+    const shortcut = "press Ctrl+V (Cmd+V on a Mac)";
+    if (!navigator.clipboard?.read) {
+      setScan({ phase: "error", message: `This browser can't read images from the clipboard with a button. On a computer, ${shortcut} instead.` });
+      return;
+    }
+    try {
+      for (const item of await navigator.clipboard.read()) {
+        const type = item.types.find((t) => t.startsWith("image/"));
+        if (!type) continue;
+        const blob = await item.getType(type);
+        await handleFile(new File([blob], `pasted.${type.split("/")[1] || "png"}`, { type }));
+        return;
+      }
+      setScan({ phase: "error", message: "There's no image on your clipboard. Copy the receipt image first, then tap Paste." });
+    } catch (err) {
+      const denied = err instanceof DOMException && err.name === "NotAllowedError";
+      setScan({
+        phase: "error",
+        message: denied
+          ? `Clipboard access was blocked. Allow it when your browser asks, or ${shortcut}.`
+          : `Couldn't read the clipboard. Try again, or ${shortcut}.`,
+      });
+    }
+  }, [handleFile]);
+
   const manual = useCallback(() => {
     haptic();
     if (state.items.length === 0) dispatch({ type: "addItem" });
@@ -163,6 +203,7 @@ export default function SplitApp() {
         unassigned={result.unassignedItems.length}
         grandTotal={result.grandTotalCents}
         onFile={handleFile}
+        onPaste={pasteFromClipboard}
         onManual={manual}
         go={go}
       />
@@ -178,6 +219,7 @@ function BottomBar({
   unassigned,
   grandTotal,
   onFile,
+  onPaste,
   onManual,
   go,
 }: {
@@ -188,6 +230,7 @@ function BottomBar({
   unassigned: number;
   grandTotal: number;
   onFile: (f: File | undefined) => void;
+  onPaste: () => void;
   onManual: () => void;
   go: (s: Step) => void;
 }) {
@@ -199,6 +242,8 @@ function BottomBar({
     e.target.value = "";
     onFile(f);
   };
+
+  const stacked = "min-h-[60px] flex-col gap-0.5 px-2 text-[15px]";
 
   const back = (to: Step, label: string) => (
     <button type="button" className="btn btn-gray w-[50px] px-0" onClick={() => go(to)} aria-label={`Back to ${label}`}>
@@ -212,16 +257,20 @@ function BottomBar({
       <input ref={libraryRef} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden onChange={pick} />
       <div className="mx-auto max-w-xl px-4">
         {step === "scan" && (
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" className="btn btn-filled" disabled={scanning} onClick={() => cameraRef.current?.click()}>
+          <div className="grid grid-cols-3 gap-2">
+            <button type="button" className={`btn btn-filled ${stacked}`} disabled={scanning} onClick={() => cameraRef.current?.click()}>
               <Icon name="camera" />
               Take Photo
             </button>
-            <button type="button" className="btn btn-tinted" disabled={scanning} onClick={() => libraryRef.current?.click()}>
+            <button type="button" className={`btn btn-tinted ${stacked}`} disabled={scanning} onClick={() => libraryRef.current?.click()}>
               <Icon name="image" />
               Library
             </button>
-            <button type="button" className="btn btn-gray col-span-2" disabled={scanning} onClick={onManual}>
+            <button type="button" className={`btn btn-tinted ${stacked}`} disabled={scanning} onClick={onPaste}>
+              <Icon name="paste" />
+              Paste
+            </button>
+            <button type="button" className="btn btn-gray col-span-3" disabled={scanning} onClick={onManual}>
               Skip OCR / Add Items Manually
             </button>
           </div>
