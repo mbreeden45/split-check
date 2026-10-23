@@ -100,7 +100,7 @@ describe("venmoMessage", () => {
     const items = [item({ id: "Fish Tacos", priceCents: 1400, kind: "food", shares: { a: 1, b: 1 } })];
     const r = computeSplit(items, diners, 100, { ...noTip, percent: 20 });
     const msg = venmoMessage(r.diners[0], { ...noTip, percent: 20 });
-    expect(msg).not.toMatch(/[–—]/);
+    expect(msg).not.toMatch(/[\u2013\u2014]/);
     expect(msg).toContain("Fish Tacos (1/2): $7.00");
     expect(msg).toContain("Total:");
   });
