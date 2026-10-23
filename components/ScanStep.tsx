@@ -9,113 +9,72 @@ export default function ScanStep({
   photoUrl,
   hasItems,
   onCancel,
-  onManual,
   onResume,
 }: {
   scan: ScanState;
   photoUrl: string | null;
   hasItems: boolean;
   onCancel: () => void;
-  onManual: () => void;
   onResume: () => void;
 }) {
   if (scan.phase === "working") {
     const pct = Math.round(scan.progress.progress * 100);
     return (
-      <section aria-live="polite" aria-busy="true" className="space-y-4">
-        <div className="check overflow-hidden">
-          {photoUrl && (
-            <div className="relative max-h-[46dvh] overflow-hidden border-b-[1.5px] border-ink bg-bone">
-              <img src={photoUrl} alt="Your receipt photo" className="mx-auto max-h-[46dvh] w-auto object-contain grayscale-[30%]" />
-              <div className="pointer-events-none absolute inset-x-0 h-10 animate-[scanline_1.8s_ease-in-out_infinite] bg-gradient-to-b from-transparent via-forest/25 to-transparent" />
-            </div>
-          )}
-          <div className="space-y-3 p-4">
-            <div className="flex items-baseline justify-between">
-              <p className="font-bold">{scan.progress.status}</p>
-              <p className="font-mono text-sm tabular-nums text-ink-soft">{pct}%</p>
-            </div>
-            <div className="h-3 overflow-hidden rounded-sm border-[1.5px] border-ink bg-card" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
-              <div
-                className="h-full bg-forest transition-[width] duration-200"
-                style={{
-                  width: `${Math.max(4, pct)}%`,
-                  backgroundImage: "repeating-linear-gradient(-45deg, transparent 0 6px, rgba(255,255,255,.18) 6px 12px)",
-                }}
-              />
-            </div>
-            <p className="text-sm text-ink-soft">
-              Reading happens on this phone. The first scan downloads the OCR engine once, then it is cached.
-            </p>
-            <button type="button" onClick={onCancel} className="btn btn-ghost w-full">
-              <Icon name="x" className="h-4 w-4" />
-              Cancel
-            </button>
+      <section aria-live="polite" aria-busy="true" className="group">
+        {photoUrl && (
+          <div className="bg-fill">
+            <img src={photoUrl} alt="Your receipt photo" className="mx-auto max-h-[45dvh] w-auto object-contain" />
           </div>
+        )}
+        <div className="px-4 py-4">
+          <div className="flex items-baseline justify-between text-[15px]">
+            <span>{scan.progress.status}…</span>
+            <span className="tabular-nums text-label-2">{pct}%</span>
+          </div>
+          <div
+            className="mt-2 h-1 overflow-hidden rounded-full bg-fill-strong"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={pct}
+          >
+            <div className="h-full rounded-full bg-accent transition-[width] duration-200" style={{ width: `${Math.max(3, pct)}%` }} />
+          </div>
+          <p className="mt-3 text-[13px] text-label-2">
+            The first scan downloads the text reader, which can take a few seconds.
+          </p>
         </div>
-        <style>{`@keyframes scanline { 0% { top: -10% } 50% { top: 90% } 100% { top: -10% } }`}</style>
+        <button type="button" onClick={onCancel} className="link w-full justify-center border-t border-sep">
+          Cancel
+        </button>
       </section>
     );
   }
 
   return (
-    <section className="space-y-5">
+    <section>
       {scan.phase === "error" && (
-        <div role="alert" className="rounded-md border-2 border-stamp bg-stamp-wash p-3 text-[0.9375rem] font-medium text-stamp">
+        <p role="alert" className="group mb-6 px-4 py-3 text-[15px] text-danger">
           {scan.message}
-        </div>
+        </p>
       )}
 
       {hasItems && (
-        <button type="button" onClick={onResume} className="btn w-full justify-between">
-          <span>Resume current check</span>
-          <Icon name="arrow-right" />
-        </button>
+        <div className="group mb-6">
+          <button type="button" onClick={onResume} className="link w-full justify-between px-4">
+            Continue current check
+            <span className="text-label-3" aria-hidden>›</span>
+          </button>
+        </div>
       )}
 
-      <article className="check perf-bottom overflow-hidden pb-4">
-        <div className="flex items-center justify-between border-b-[1.5px] border-ink bg-forest px-4 py-2 text-card">
-          <span className="label text-card">Guest Check</span>
-          <span className="font-mono text-xs">TABLE ___ GUESTS ___</span>
-        </div>
-        <div className="px-4 pt-5">
-          <h2 className="text-[2.35rem] font-black leading-[0.95] tracking-tight [font-stretch:80%]">
-            Snap the receipt.
-            <br />
-            <span className="text-forest">Split it fair.</span>
-          </h2>
-          <p className="mt-3 text-[0.9375rem] leading-relaxed text-ink-soft">
-            Food tax only lands on the people who ate. Drinks that already include tax stay clean. Tip follows what
-            each person ordered.
-          </p>
-        </div>
-
-        <ol className="ruled mx-4 mt-5 border-y border-rule font-mono text-sm">
-          {[
-            ["01", "Snap or upload the receipt"],
-            ["02", "Fix any misread lines"],
-            ["03", "Tap who had what"],
-            ["04", "Copy each Venmo note"],
-          ].map(([n, t]) => (
-            <li key={n} className="flex items-center gap-3 py-2.5">
-              <span className="text-stamp">{n}</span>
-              <span className="text-ink">{t}</span>
-            </li>
-          ))}
-        </ol>
-
-        <div className="mx-4 mt-5 flex items-start gap-3">
-          <span className="stamp shrink-0 text-[0.625rem] text-forest">Private</span>
-          <p className="text-[0.8125rem] leading-snug text-ink-soft">
-            Your photo never leaves this device. No accounts, no uploads, no AI tokens. OCR runs in your browser.
-          </p>
-        </div>
-      </article>
-
-      <button type="button" onClick={onManual} className="btn w-full min-h-14 text-base">
-        <Icon name="pencil" />
-        Skip OCR / Add Items Manually
-      </button>
+      <div className="flex flex-col items-center px-6 pt-10 text-center">
+        <Icon name="doc" className="h-14 w-14 text-label-3" />
+        <h2 className="mt-4 text-[22px] font-semibold">Scan a Receipt</h2>
+        <p className="mt-2 max-w-xs text-[15px] text-label-2">
+          Take a photo and the items are read on your phone. The photo is never uploaded.
+        </p>
+      </div>
     </section>
   );
 }

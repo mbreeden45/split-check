@@ -39,7 +39,7 @@ export async function copyText(text: string): Promise<boolean> {
 }
 
 export function Money({ cents, className = "" }: { cents: number; className?: string }) {
-  return <span className={`font-mono tabular-nums ${className}`}>{formatMoney(cents)}</span>;
+  return <span className={`tabular-nums ${className}`}>{formatMoney(cents)}</span>;
 }
 
 /** Decimal input that keeps the raw text while typing and commits cents. */
@@ -48,13 +48,11 @@ export function MoneyInput({
   onChange,
   label,
   className = "",
-  autoFocus,
 }: {
   cents: number;
   onChange: (cents: number) => void;
   label: string;
   className?: string;
-  autoFocus?: boolean;
 }) {
   const [text, setText] = useState(cents ? centsToInput(cents) : "");
   const [focused, setFocused] = useState(false);
@@ -64,33 +62,26 @@ export function MoneyInput({
   }, [cents, focused]);
 
   return (
-    <div className={`relative ${className}`}>
-      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-ink-faint">
-        $
-      </span>
-      <input
-        aria-label={label}
-        className="field pl-6 text-right font-mono tabular-nums"
-        inputMode="decimal"
-        enterKeyHint="done"
-        placeholder="0.00"
-        autoFocus={autoFocus}
-        value={text}
-        onFocus={(e) => {
-          setFocused(true);
-          requestAnimationFrame(() => e.target.select());
-        }}
-        onChange={(e) => {
-          const v = e.target.value.replace(/[^0-9.,]/g, "");
-          setText(v);
-          onChange(toCents(v) ?? 0);
-        }}
-        onBlur={() => {
-          setFocused(false);
-          setText(cents ? centsToInput(cents) : "");
-        }}
-      />
-    </div>
+    <input
+      aria-label={label}
+      className={`field-bare text-right tabular-nums ${className}`}
+      inputMode="decimal"
+      enterKeyHint="done"
+      placeholder="$0.00"
+      value={focused ? text : cents ? formatMoney(cents) : ""}
+      onFocus={(e) => {
+        setFocused(true);
+        setText(cents ? centsToInput(cents) : "");
+        const el = e.target;
+        requestAnimationFrame(() => el.select());
+      }}
+      onChange={(e) => {
+        const v = e.target.value.replace(/[^0-9.,]/g, "");
+        setText(v);
+        onChange(toCents(v) ?? 0);
+      }}
+      onBlur={() => setFocused(false)}
+    />
   );
 }
 
@@ -118,7 +109,6 @@ export function Segmented<T extends string>({
             if (value !== o.value) haptic();
             onChange(o.value);
           }}
-          className="flex-1"
         >
           {o.label}
         </button>
@@ -140,57 +130,81 @@ export function Stepper({
   min?: number;
   max?: number;
 }) {
+  const btn = "grid h-9 w-11 place-items-center text-xl text-label disabled:text-label-3";
   return (
-    <div className="inline-flex items-center rounded-md border-[1.5px] border-ink bg-card" role="group" aria-label={label}>
-      <button
-        type="button"
-        className="grid h-11 w-11 place-items-center text-xl font-bold disabled:opacity-30"
-        aria-label={`Decrease ${label}`}
-        disabled={value <= min}
-        onClick={() => {
-          haptic();
-          onChange(Math.max(min, value - 1));
-        }}
-      >
-        <span aria-hidden>-</span>
-      </button>
-      <span className="w-7 text-center font-mono text-base font-semibold tabular-nums" aria-live="polite">
+    <div className="flex items-center gap-2" role="group" aria-label={label}>
+      <span className="w-6 text-right tabular-nums" aria-live="polite">
         {value}
       </span>
-      <button
-        type="button"
-        className="grid h-11 w-11 place-items-center text-xl font-bold disabled:opacity-30"
-        aria-label={`Increase ${label}`}
-        disabled={value >= max}
-        onClick={() => {
-          haptic();
-          onChange(Math.min(max, value + 1));
-        }}
-      >
-        <span aria-hidden>+</span>
-      </button>
+      <div className="flex items-center rounded-lg bg-fill">
+        <button
+          type="button"
+          className={btn}
+          aria-label={`Decrease ${label}`}
+          disabled={value <= min}
+          onClick={() => {
+            haptic();
+            onChange(Math.max(min, value - 1));
+          }}
+        >
+          <span aria-hidden>−</span>
+        </button>
+        <span className="h-5 w-px bg-sep" aria-hidden />
+        <button
+          type="button"
+          className={btn}
+          aria-label={`Increase ${label}`}
+          disabled={value >= max}
+          onClick={() => {
+            haptic();
+            onChange(Math.min(max, value + 1));
+          }}
+        >
+          <span aria-hidden>+</span>
+        </button>
+      </div>
     </div>
   );
 }
 
-export function SectionTitle({ kicker, title, children }: { kicker: string; title: string; children?: ReactNode }) {
+export function Section({
+  title,
+  footer,
+  children,
+  className = "",
+}: {
+  title?: ReactNode;
+  footer?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <header className="mb-4 flex items-end justify-between gap-3">
-      <div>
-        <p className="label text-stamp">{kicker}</p>
-        <h2 className="text-[1.65rem] font-extrabold leading-tight tracking-tight [font-stretch:88%]">{title}</h2>
-      </div>
-      {children}
-    </header>
+    <section className={`mb-8 ${className}`}>
+      {title && <h2 className="section-head">{title}</h2>}
+      <div className="group rows">{children}</div>
+      {footer && <p className="section-foot">{footer}</p>}
+    </section>
   );
 }
 
-export function Icon({ name, className = "h-5 w-5" }: { name: "camera" | "image" | "pencil" | "plus" | "trash" | "copy" | "check" | "x" | "arrow-left" | "arrow-right" | "users" | "receipt"; className?: string }) {
+/** A plain label / value row. */
+export function Row({ label, children, strong }: { label: ReactNode; children?: ReactNode; strong?: boolean }) {
+  return (
+    <div className={`flex min-h-11 items-center justify-between gap-3 px-4 ${strong ? "font-semibold" : ""}`}>
+      <span className="min-w-0 truncate">{label}</span>
+      <span className={strong ? "" : "text-label-2"}>{children}</span>
+    </div>
+  );
+}
+
+type IconName = "camera" | "image" | "plus" | "trash" | "copy" | "check" | "chevron-left" | "doc";
+
+export function Icon({ name, className = "h-5 w-5" }: { name: IconName; className?: string }) {
   const common = {
     className,
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: 2,
+    strokeWidth: 1.8,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
     viewBox: "0 0 24 24",
@@ -200,23 +214,16 @@ export function Icon({ name, className = "h-5 w-5" }: { name: "camera" | "image"
     case "camera":
       return (
         <svg {...common}>
-          <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
-          <circle cx="12" cy="13" r="3.5" />
+          <path d="M3.5 8.5A1.5 1.5 0 0 1 5 7h2.2l1.5-2h6.6l1.5 2H19a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z" />
+          <circle cx="12" cy="12.5" r="3.5" />
         </svg>
       );
     case "image":
       return (
         <svg {...common}>
-          <rect x="3" y="4" width="18" height="16" rx="1" />
-          <circle cx="9" cy="10" r="1.6" />
-          <path d="m21 16-5-5-9 9" />
-        </svg>
-      );
-    case "pencil":
-      return (
-        <svg {...common}>
-          <path d="M4 20h4L19 9l-4-4L4 16z" />
-          <path d="m13.5 6.5 4 4" />
+          <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+          <circle cx="9" cy="10" r="1.5" />
+          <path d="m20.5 15.5-4.5-4.5-8.5 8.5" />
         </svg>
       );
     case "plus":
@@ -228,53 +235,33 @@ export function Icon({ name, className = "h-5 w-5" }: { name: "camera" | "image"
     case "trash":
       return (
         <svg {...common}>
-          <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+          <path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.9 12.5h9.2L17.5 7" />
         </svg>
       );
     case "copy":
       return (
         <svg {...common}>
-          <rect x="8" y="8" width="12" height="12" rx="1" />
-          <path d="M16 8V4H4v12h4" />
+          <rect x="8.5" y="8.5" width="11" height="11" rx="2" />
+          <path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2" />
         </svg>
       );
     case "check":
       return (
         <svg {...common}>
-          <path d="m5 12 5 5 9-10" />
+          <path d="m5 12.5 4.5 4.5L19 7.5" />
         </svg>
       );
-    case "x":
+    case "chevron-left":
       return (
-        <svg {...common}>
-          <path d="M6 6l12 12M18 6 6 18" />
+        <svg {...common} strokeWidth={2.4}>
+          <path d="M15 5l-7 7 7 7" />
         </svg>
       );
-    case "arrow-left":
+    case "doc":
       return (
-        <svg {...common}>
-          <path d="M19 12H5m6-6-6 6 6 6" />
-        </svg>
-      );
-    case "arrow-right":
-      return (
-        <svg {...common}>
-          <path d="M5 12h14m-6-6 6 6-6 6" />
-        </svg>
-      );
-    case "users":
-      return (
-        <svg {...common}>
-          <circle cx="9" cy="8" r="3.5" />
-          <path d="M2.5 20c.8-3.6 3.3-5.5 6.5-5.5s5.7 1.9 6.5 5.5" />
-          <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.8.7 3 2.4 3.5 5.2" />
-        </svg>
-      );
-    case "receipt":
-      return (
-        <svg {...common}>
-          <path d="M6 3h12v18l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5L6 21z" />
-          <path d="M9 8h6M9 12h6M9 16h3" />
+        <svg {...common} strokeWidth={1.5}>
+          <path d="M6 3.5h12v17l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4-2 1.4z" />
+          <path d="M9 8.5h6M9 12h6M9 15.5h3.5" />
         </svg>
       );
   }
