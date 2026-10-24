@@ -3,6 +3,8 @@
 /* eslint-disable @next/next/no-img-element */
 import { useEffect, useRef, useState } from "react";
 import type { ScanState } from "./SplitApp";
+import type { PayHandles } from "@/lib/pay";
+import { GetPaidSummary } from "./GetPaidSheet";
 import { Icon } from "./ui";
 
 export default function ScanStep({
@@ -14,6 +16,8 @@ export default function ScanStep({
   onFile,
   onPaste,
   onManual,
+  handles,
+  onEditPayment,
 }: {
   scan: ScanState;
   photoUrl: string | null;
@@ -23,6 +27,8 @@ export default function ScanStep({
   onFile: (f: File | undefined) => void;
   onPaste: () => void;
   onManual: () => void;
+  handles: PayHandles;
+  onEditPayment: () => void;
 }) {
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -167,6 +173,8 @@ export default function ScanStep({
           Skip OCR / Add Items Manually
         </button>
       </div>
+
+      <GetPaidSummary handles={handles} onOpen={onEditPayment} className="mt-8" />
     </section>
   );
 }
