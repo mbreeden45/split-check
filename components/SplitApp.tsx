@@ -12,6 +12,7 @@ import ScanStep from "./ScanStep";
 import ItemsStep from "./ItemsStep";
 import SplitStep from "./SplitStep";
 import TotalsStep from "./TotalsStep";
+import GetPaidSheet from "./GetPaidSheet";
 
 const RECONCILED = 1000;
 
@@ -33,6 +34,11 @@ export type ScanState =
 export default function SplitApp() {
   const [state, dispatch] = useCheck();
   const { handles, setHandles, restored, clearRestored } = usePayHandles();
+  const [payOpen, setPayOpen] = useState(false);
+  const openPay = useCallback(() => {
+    haptic();
+    setPayOpen(true);
+  }, []);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [scan, setScan] = useState<ScanState>({ phase: "idle" });
   const abortRef = useRef<AbortController | null>(null);
@@ -224,9 +230,14 @@ export default function SplitApp() {
         <div className="mx-auto max-w-xl px-4 lg:flex lg:max-w-6xl lg:items-center lg:gap-8 lg:px-8">
         <div className="flex items-center justify-between lg:shrink-0">
           <h1 className="text-[28px] font-bold tracking-tight lg:text-[22px]">Split Check</h1>
-          <button type="button" onClick={reset} className="link text-[17px] lg:hidden" disabled={scanning}>
-            New
-          </button>
+          <div className="flex items-center gap-4 lg:hidden">
+            <button type="button" onClick={openPay} className="link text-[17px]">
+              Get Paid
+            </button>
+            <button type="button" onClick={reset} className="link text-[17px]" disabled={scanning}>
+              New
+            </button>
+          </div>
         </div>
         <div role="group" aria-label="Steps" className="seg mt-2 lg:mt-0 lg:w-[440px]">
           {STEPS.map((s, i) => (
@@ -251,6 +262,9 @@ export default function SplitApp() {
             grandTotal={result.grandTotalCents}
             go={go}
           />
+          <button type="button" onClick={openPay} className="link px-2 text-[15px]">
+            Get Paid
+          </button>
           <button type="button" onClick={reset} className="link px-2 text-[15px]" disabled={scanning}>
             New Check
           </button>
@@ -278,12 +292,16 @@ export default function SplitApp() {
             onFile={handleFile}
             onPaste={pasteFromClipboard}
             onManual={manual}
+            handles={handles}
+            onEditPayment={openPay}
           />
         )}
         {state.step === "items" && <ItemsStep state={state} dispatch={dispatch} photoUrl={photoUrl} taxInsight={taxInsight} />}
         {state.step === "split" && <SplitStep state={state} dispatch={dispatch} result={result} />}
-        {state.step === "totals" && <TotalsStep state={state} dispatch={dispatch} result={result} handles={handles} setHandles={setHandles} />}
+        {state.step === "totals" && <TotalsStep state={state} dispatch={dispatch} result={result} handles={handles} onEditPayment={openPay} />}
       </main>
+
+      <GetPaidSheet open={payOpen} handles={handles} setHandles={setHandles} onClose={() => setPayOpen(false)} />
 
       <BottomBar
         step={state.step}

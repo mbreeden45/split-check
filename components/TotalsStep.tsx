@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState, type Dispatch } from "react";
+import { useState, type Dispatch } from "react";
 import type { Action, CheckState } from "@/lib/store";
 import type { DinerBreakdown, SplitResult } from "@/lib/split";
 import type { TipConfig } from "@/lib/types";
 import { formatMoney } from "@/lib/money";
 import { groupMessage, tipLabel, venmoMessage } from "@/lib/venmo";
-import { backupLink, handleSummary, hasAnyHandle, type PayHandles } from "@/lib/pay";
-import { Icon, Money, MoneyInput, Row, Section, Segmented, Toggle, copyText, haptic, shareText } from "./ui";
+import type { PayHandles } from "@/lib/pay";
+import { GetPaidSummary } from "./GetPaidSheet";
+import { Icon, Money, MoneyInput, Row, Section, Segmented, copyText, haptic, shareText } from "./ui";
 
 const PRESETS = ["18", "20", "25"] as const;
 type Choice = (typeof PRESETS)[number] | "custom";
@@ -17,13 +18,13 @@ export default function TotalsStep({
   dispatch,
   result,
   handles,
-  setHandles,
+  onEditPayment,
 }: {
   state: CheckState;
   dispatch: Dispatch<Action>;
   result: SplitResult;
   handles: PayHandles;
-  setHandles: (h: Partial<PayHandles>) => void;
+  onEditPayment: () => void;
 }) {
   const { tip } = state;
   const isPreset = tip.mode === "percent" && PRESETS.includes(String(tip.percent) as (typeof PRESETS)[number]);
@@ -119,7 +120,10 @@ export default function TotalsStep({
         )}
       </Section>
 
-      <GetPaid handles={handles} setHandles={setHandles} />
+      <section className="mb-8">
+        <h2 className="section-head">Get Paid</h2>
+        <GetPaidSummary handles={handles} onOpen={onEditPayment} />
+      </section>
 
       {result.unassignedItems.length > 0 && (
         <p role="alert" className="group mb-8 px-4 py-3 text-[15px] text-danger">
@@ -201,135 +205,6 @@ function useFlash() {
     else window.prompt("Copy this message:", text);
   };
   return { flash, send, copy };
-}
-
-const HOME_TIP_KEY = "split-check:home-tip-dismissed";
-
-/** iPhone Safari outside a Home Screen app, where storage can be cleared after 7 days unused. */
-function useHomeScreenTip() {
-  const [show, setShow] = useState(false);
-  useEffect(() => {
-    try {
-      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-      const standalone =
-        window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
-      setShow(ios && !standalone && !window.localStorage.getItem(HOME_TIP_KEY));
-    } catch {
-      setShow(false);
-    }
-  }, []);
-  const dismiss = () => {
-    setShow(false);
-    try {
-      window.localStorage.setItem(HOME_TIP_KEY, "1");
-    } catch {
-      // Fine: the tip just shows again next time.
-    }
-  };
-  return { show, dismiss };
-}
-
-function GetPaid({ handles, setHandles }: { handles: PayHandles; setHandles: (h: Partial<PayHandles>) => void }) {
-  const configured = hasAnyHandle(handles);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<PayHandles>(handles);
-  const { flash, copy } = useFlash();
-  const homeTip = useHomeScreenTip();
-
-  const startEdit = () => {
-    setDraft(handles);
-    setEditing(true);
-  };
-  const field = (key: "name" | "venmo" | "cashapp" | "paypal" | "zelle", label: string, placeholder: string, prefix = "") => (
-    <label className="flex items-center gap-3 px-4">
-      <span className="w-24 shrink-0">{label}</span>
-      {prefix && <span className="-mr-2 text-label-2">{prefix}</span>}
-      <input
-        className="field-bare min-w-0 flex-1"
-        placeholder={placeholder}
-        value={draft[key]}
-        autoComplete="off"
-        autoCapitalize={key === "name" ? "words" : "none"}
-        autoCorrect="off"
-        spellCheck={false}
-        inputMode={key === "zelle" ? "email" : "text"}
-        enterKeyHint="done"
-        onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-      />
-    </label>
-  );
-
-  if (editing || !configured) {
-    return (
-      <Section
-        title="Get Paid"
-        footer="Fill in the ones you use. Each person's message gets links that open the app ready to pay you. Saved on this device only, never uploaded."
-      >
-        {field("name", "Your Name", "Optional")}
-        {field("venmo", "Venmo", "username", "@")}
-        {field("cashapp", "Cash App", "cashtag", "$")}
-        {field("paypal", "PayPal.me", "name")}
-        {field("zelle", "Zelle", "Phone or email")}
-        <div className="flex min-h-11 items-center justify-between gap-3 px-4">
-          <span>Apple Cash</span>
-          <Toggle label="Accept Apple Cash" checked={draft.appleCash} onChange={(appleCash) => setDraft({ ...draft, appleCash })} />
-        </div>
-        <div className="flex items-center justify-end gap-4 px-4">
-          {configured && (
-            <button type="button" className="link text-label-2" onClick={() => setEditing(false)}>
-              Cancel
-            </button>
-          )}
-          <button
-            type="button"
-            className="link font-semibold"
-            disabled={!hasAnyHandle({ ...draft, name: "" }) && !configured}
-            onClick={() => {
-              setHandles(draft);
-              setEditing(false);
-              haptic();
-            }}
-          >
-            Save
-          </button>
-        </div>
-      </Section>
-    );
-  }
-
-  return (
-    <Section
-      title="Get Paid"
-      footer={
-        <>
-          Saved on this device only. Keep the backup link in Notes to restore these on any device.
-          {homeTip.show && (
-            <span className="mt-2 block text-label">
-              Tip: tap Share, then Add to Home Screen. Safari can clear sites you haven&apos;t opened in 7 days, but
-              Home Screen apps keep their data.{" "}
-              <button type="button" className="text-accent" onClick={homeTip.dismiss}>
-                Got it
-              </button>
-            </span>
-          )}
-        </>
-      }
-    >
-      <div className="flex min-h-11 items-center gap-3 px-4 py-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] text-label-2">Pay links go to{handles.name ? ` ${handles.name}` : ""}</p>
-          <p className="text-[15px]">{handleSummary(handles)}</p>
-        </div>
-        <button type="button" className="link shrink-0" onClick={startEdit}>
-          Edit
-        </button>
-      </div>
-      <button type="button" className="link w-full px-4" onClick={() => copy(backupLink(window.location.origin, handles))}>
-        <Icon name={flash ? "check" : "copy"} />
-        {flash ? "Backup Link Copied" : "Copy Backup Link"}
-      </button>
-    </Section>
-  );
 }
 
 function PersonSection({
