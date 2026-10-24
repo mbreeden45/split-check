@@ -115,3 +115,56 @@ describe("real receipt: Hen & Heifer", () => {
     expect(r.items.every((i) => i.kind === "food")).toBe(true);
   });
 });
+
+// Real receipt (Barney's Beanery, Pasadena). A card covers the Subtotal / Tax / Total labels.
+const BARNEYS = `Barney's Beanery - Pasadena
+99 East Colorado Boulevard RB
+Pasadena, CA 91105
+Server: ELIZABETH C |
+Check #111 Table 11
+Ordered: 10/18/26 2:47 PM
+1 Modelo Lager (Pint) $7.50
+1 Stone Delicious (Pint) $8.50
+1 6 Wings $15.00
+Fries $ $5.00
+3 Route 66 Hazy (Pint) $22.50 |
+2 Negroni $36.00
+1 P.0.G. Kombucha (Pint) $8.50
+eapple Seltzer (Pint) $8.50 f
+$111.50 \\
+AMERICAN! $2.20
+EXPRESS | $113.70
+| Suggested Tip:
+| 18%: (Tip $20.47 Total $134.17)
+| 20%: (Tip $22.74 Total $136.44)
+3 23%: (Tip $26.15 Total $139.85)
+| Tip percentages are based on the check
+_g price after taxes.`;
+
+describe("real receipt: Barney's Beanery", () => {
+  const r = parseReceiptText(BARNEYS);
+
+  it("reads every item and nothing past the totals", () => {
+    expect(r.items.map((i) => [i.qty, i.name, i.priceCents])).toEqual([
+      [1, "Modelo Lager (Pint)", 750],
+      [1, "Stone Delicious (Pint)", 850],
+      [1, "6 Wings", 1500],
+      [1, "Fries", 500],
+      [3, "Route 66 Hazy (Pint)", 2250],
+      [2, "Negroni", 3600],
+      [1, "P.0.G. Kombucha (Pint)", 850],
+      [1, "eapple Seltzer (Pint)", 850],
+    ]);
+  });
+
+  it("finds the unlabeled subtotal, tax and total by their arithmetic", () => {
+    expect(r.subtotalCents).toBe(11150);
+    expect(r.taxCents).toBe(220);
+    expect(r.totalCents).toBe(11370);
+  });
+
+  it("keeps the drinks tax-included and the food taxable", () => {
+    expect(r.drinksTaxed).toBe(false);
+    expect(r.items.filter((i) => i.kind === "food").map((i) => i.name)).toEqual(["6 Wings", "Fries"]);
+  });
+});
