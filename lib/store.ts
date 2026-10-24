@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { EMPTY_HANDLES, cleanHandles, handlesFromFragment, type PayHandles } from "./pay";
 import type { Diner, ItemKind, LineItem, SplitMode, TipConfig } from "./types";
 import type { ParsedItem } from "./parser";
 
@@ -28,6 +29,8 @@ export interface CheckState {
   /** One-line explanation of an automatic decision made while reading the receipt. */
   notice: string | null;
   tip: TipConfig;
+  /** Diner ids the collector has marked as paid. */
+  paid: Record<string, boolean>;
 }
 
 export const initialState: CheckState = {
@@ -42,6 +45,7 @@ export const initialState: CheckState = {
   taxHintDismissed: false,
   notice: null,
   tip: { basis: "post", mode: "percent", percent: 20, amountCents: 0 },
+  paid: {},
 };
 
 export type Action =
@@ -59,6 +63,7 @@ export type Action =
     }
   | { type: "applyTaxSuggestion"; includedIds: string[] }
   | { type: "dismissTaxHint" }
+  | { type: "togglePaid"; dinerId: string }
   | { type: "addItem"; kind?: ItemKind }
   | { type: "updateItem"; id: string; patch: Partial<Pick<LineItem, "name" | "qty" | "priceCents" | "kind">> }
   | { type: "removeItem"; id: string }
@@ -120,6 +125,8 @@ export function reducer(state: CheckState, action: Action): CheckState {
     }
     case "dismissTaxHint":
       return { ...state, taxHintDismissed: true };
+    case "togglePaid":
+      return { ...state, paid: { ...state.paid, [action.dinerId]: !state.paid[action.dinerId] } };
     case "addItem":
       return { ...state, items: [...state.items, newItem({ kind: action.kind ?? "food" })] };
     case "updateItem":
@@ -139,6 +146,7 @@ export function reducer(state: CheckState, action: Action): CheckState {
     case "removeDiner":
       return {
         ...state,
+        paid: Object.fromEntries(Object.entries(state.paid).filter(([id]) => id !== action.id)),
         diners: state.diners.filter((d) => d.id !== action.id),
         items: state.items.map((i) => {
           if (!(action.id in i.shares)) return i;
@@ -215,4 +223,50 @@ export function useCheck() {
   }, [state]);
 
   return [state, dispatch] as const;
+}
+
+const HANDLES_KEY = "split-check:pay-handles";
+
+/**
+ * The collector's payment handles. They live only in this browser's localStorage,
+ * never on a server, and survive New Check. Opening a backup link restores them.
+ */
+export function usePayHandles() {
+  const [handles, setHandlesState] = useState<PayHandles>(EMPTY_HANDLES);
+  const [restored, setRestored] = useState(false);
+
+  useEffect(() => {
+    let saved: PayHandles = EMPTY_HANDLES;
+    try {
+      const raw = window.localStorage.getItem(HANDLES_KEY);
+      if (raw) saved = cleanHandles(JSON.parse(raw));
+    } catch {
+      // Blocked or corrupt storage: start empty.
+    }
+    const fromLink = handlesFromFragment(window.location.hash);
+    if (fromLink) {
+      saved = fromLink;
+      setRestored(true);
+      try {
+        window.localStorage.setItem(HANDLES_KEY, JSON.stringify(fromLink));
+      } catch {
+        // Still usable for this visit.
+      }
+      // Drop the fragment so the handles don't linger in the address bar or history.
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+    setHandlesState(saved);
+  }, []);
+
+  const setHandles = useCallback((h: Partial<PayHandles>) => {
+    const clean = cleanHandles(h);
+    setHandlesState(clean);
+    try {
+      window.localStorage.setItem(HANDLES_KEY, JSON.stringify(clean));
+    } catch {
+      // Ignore quota or privacy errors.
+    }
+  }, []);
+
+  return { handles, setHandles, restored, clearRestored: () => setRestored(false) };
 }
