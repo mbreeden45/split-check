@@ -168,3 +168,40 @@ describe("real receipt: Barney's Beanery", () => {
     expect(r.items.filter((i) => i.kind === "food").map((i) => i.name)).toEqual(["6 Wings", "Fries"]);
   });
 });
+
+// The same Barney's photo as read by the on-device PaddleOCR reader (no labels hidden this time,
+// but its own quirks: "16 Wings" for "1 6 Wings", a stray "b").
+const BARNEYS_PADDLE = `19 EST.20
+Barney' Beanery a
+tColorado Boulevard
+Pasadena, CA 91105
+Server: ELIZABETH C
+Check #111 Table 11
+Ordered: 10/18/26 2:47 PM
+1 Modelo Lager Pint) $7.50
+1 Stone Delicious (Pint)b $8.50
+16 Wings $15.00
+Fries $ $5.00
+3 Route 66 Hazy (Pint) $22.50
+2 Negroni $36.00
+1 P.0.G. Kombucha (Pint) $8.50
+eapple Seltzer (Pint) $8.50
+$111.50
+AMERICAN $2.20
+EXPRESS $113.70
+Suggested Tip:
+18%: (Tip $20.47 Total $134.17)
+20%: (Tip $22.74 Total $136.44)`;
+
+describe("real receipt: Barney's via PaddleOCR", () => {
+  const r = parseReceiptText(BARNEYS_PADDLE);
+  it("reads every price and reconciles", () => {
+    expect(r.items.map((i) => i.priceCents)).toEqual([750, 850, 1500, 500, 2250, 3600, 850, 850]);
+    expect(r.subtotalCents).toBe(11150);
+    expect(r.taxCents).toBe(220);
+    expect(r.totalCents).toBe(11370);
+  });
+  it("treats a two digit quantity as part of the name", () => {
+    expect(r.items[2]).toMatchObject({ qty: 1, name: "6 Wings" });
+  });
+});

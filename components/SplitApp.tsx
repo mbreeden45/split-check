@@ -13,6 +13,18 @@ import ItemsStep from "./ItemsStep";
 import SplitStep from "./SplitStep";
 import TotalsStep from "./TotalsStep";
 
+const RECONCILED = 1000;
+
+/**
+ * How trustworthy a read looks. Items that add up exactly to the printed subtotal are
+ * almost certainly right; otherwise more items is better.
+ */
+function receiptQuality(text: string): number {
+  const r = parseReceiptText(text);
+  const sum = r.items.reduce((a, i) => a + i.priceCents, 0);
+  return (r.subtotalCents !== null && r.items.length > 0 && sum === r.subtotalCents ? RECONCILED : 0) + r.items.length;
+}
+
 export type ScanState =
   | { phase: "idle" }
   | { phase: "working"; progress: OcrProgress }
@@ -88,15 +100,33 @@ export default function SplitApp() {
       haptic(10);
 
       try {
-        const { recognizeReceipt } = await import("@/lib/ocr");
-        const text = await recognizeReceipt(
-          file,
-          (progress) => {
-            if (!controller.signal.aborted) setScan({ phase: "working", progress });
-          },
-          controller.signal,
-          (t) => parseReceiptText(t).items.length,
-        );
+        const report = (progress: OcrProgress) => {
+          if (!controller.signal.aborted) setScan({ phase: "working", progress });
+        };
+
+        // PaddleOCR first: far more accurate on phone photos.
+        let text: string | null = null;
+        try {
+          const { recognizeWithPaddle } = await import("@/lib/paddle");
+          text = await recognizeWithPaddle(file, report, controller.signal);
+        } catch (err) {
+          if (controller.signal.aborted) return;
+          console.warn("On-device reader unavailable, using backup reader", err);
+        }
+
+        // Backup reader when Paddle couldn't run, or its items don't add up to the subtotal.
+        // Only replace Paddle's read if the backup's items do add up.
+        if (text === null || receiptQuality(text) < RECONCILED) {
+          const { recognizeReceipt } = await import("@/lib/ocr");
+          const backup = await recognizeReceipt(
+            file,
+            (p) => report({ status: text === null ? p.status : "Double-checking", progress: p.progress }),
+            controller.signal,
+            receiptQuality,
+            RECONCILED,
+          );
+          if (text === null || receiptQuality(backup) >= RECONCILED) text = backup;
+        }
         if (controller.signal.aborted) return;
         const parsed = parseReceiptText(text);
         dispatch({

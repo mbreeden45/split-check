@@ -4,7 +4,7 @@ Snap a receipt, fix the lines, tap who had what, and copy a Venmo note for each 
 Tax only lands on the people who ordered taxable items. Drinks whose price already includes tax stay clean.
 Tip follows what each person ordered.
 
-- **Zero AI tokens.** OCR runs in the browser with `tesseract.js` (WebAssembly), loaded on demand.
+- **Zero AI tokens.** OCR runs in the browser: [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) (PP-OCRv5 English) through [`ppu-paddle-ocr`](https://github.com/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr) and ONNX Runtime Web in a Web Worker, using the GPU where the browser supports WebGPU. `tesseract.js` is kept as a backup reader. Both load on demand.
 - **Zero server storage.** Photos are read into memory with `URL.createObjectURL` and a canvas, never uploaded, and the object URL is revoked on cancel, new photo, or New check. The check itself (items, diners, tip) is kept only in this browser's `localStorage` so a reload does not lose it.
 - **Static site.** No API routes, no database, no environment variables.
 
@@ -21,7 +21,9 @@ Stack: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4.
 | Unclaimed items | Shown in red with the exact amount (items plus their tax and tip) that nobody is covering yet. |
 | Tax check | A live Tax Rate row shows tax / taxable items. If it's outside what's normal (the printed rate, your usual rate from your last few checks, or the general US range of about 5.5% to 12%), a hint says which items are probably marked wrong and offers a one-tap fix. With a known rate it finds the exact items that add up to the untaxed amount (`lib/taxcheck.ts`). |
 
-Before OCR, the photo is cropped to the paper (receipts are bright and colorless, tables usually are not) and its lighting is flattened so shadows and faint thermal ink read cleanly. The parser (`lib/parser.ts`) matches lines shaped like `(\d+)?\s*(.+?)\s+\$?(\d+\.\d{2})`, hardened for real OCR output (`2x` quantities, `S` read as `$`, comma decimals, a little junk after the price). Add-on lines such as `-American Cheese 1.34` are folded into the item above. It reads Subtotal, Tax and Total as summary values and stops at Total, so payment lines and tax summaries are never counted. Drinks are guessed from the name, but if the printed tax only makes sense when drinks were taxed too (checked against the printed rate when there is one), every item is marked Taxable and the app says so. You always get an editable review list afterward.
+**Reading the photo.** PaddleOCR reads the photo first. If the items it finds don't add up to the printed subtotal (or the browser can't run it), the backup reader runs: Tesseract on a cleaned-up copy of the photo (cropped to the paper, enlarged so small print is legible, straightened, lighting flattened). The backup's result is only used if its items do add up. On a benchmark of 193 hand-photographed US restaurant receipts, this reads every item exactly right on about two thirds of photos (up from about a third with Tesseract alone), and about 94% of the prices it reports are correct. The benchmark scripts are not part of this repo.
+
+**Parsing.** The parser (`lib/parser.ts`) matches lines shaped like `(\d+)?\s*(.+?)\s+\$?(\d+\.\d{2})`, hardened for real OCR output and real receipts: `2x` quantities, letters read as digits inside prices, comma decimals, a little junk after the price, prices wrapped onto the next line, discounts in parentheses, category subtotals, and register shorthand like `TXTL` and `Sub/Ttl`. Add-on lines such as `-American Cheese 1.34` are folded into the item above. It reads Subtotal, Tax and Total as summary values and stops at Total, so payment lines and tax summaries are never counted. Drinks are guessed from the name, but if the printed tax only makes sense when drinks were taxed too (checked against the printed rate when there is one), every item is marked Taxable and the app says so. You always get an editable review list afterward.
 
 ## Local development
 
@@ -106,6 +108,7 @@ Your handles are saved only in this browser's localStorage, never on a server, a
 
 ## Privacy notes
 
-- The first scan downloads the Tesseract WASM engine and English model (about 10 to 15 MB) from the jsDelivr CDN, and the browser caches it after that. Only the engine is downloaded. Your photo is never sent anywhere.
+- The first scan downloads the reader: PaddleOCR models (about 13 MB, in `public/models`) and the ONNX Runtime WebAssembly (about 6 MB compressed, copied into `public/ort` at build time by `scripts/copy-ort.mjs`), all from this site. Browsers cache them for 30 days. If the backup reader is needed, it downloads Tesseract (about 10 MB) from the jsDelivr CDN. Only the readers are downloaded. Your photo is never sent anywhere.
+- The site sends cross-origin isolation headers (`Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy`) so the reader can use several CPU threads when there's no GPU.
 - The photo exists only as an in-memory object URL and is released on cancel, new scan, or New check. Photos are never written to storage.
 - The current check, your payment handles, your usual tax rate and whether you've dismissed tips are kept in this browser's localStorage only. Nothing is sent to a server.
