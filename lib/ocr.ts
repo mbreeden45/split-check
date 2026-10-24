@@ -6,46 +6,205 @@ export interface OcrProgress {
   progress: number;
 }
 
-const MAX_EDGE = 2200;
+/** Paper detection runs on a small copy; it only needs the outline. */
+const DETECT_EDGE = 1000;
+/**
+ * Width the receipt is scaled to before OCR. A 3 inch receipt at 300 dpi is ~900 px;
+ * a bit more keeps small print legible. Tesseract reads best with letters 20 to 30 px tall,
+ * and receipts photographed at arm's length often arrive at a third of that.
+ */
+const TARGET_WIDTH = 1400;
+const MAX_SCALE = 4;
+const MAX_PIXELS = 1400 * 6000;
 
 /**
- * Draw the photo to an in-memory canvas and clean it up for Tesseract:
- * 1. Crop to the paper. Receipts are bright and colorless, tables usually are not,
- *    and wood grain or fabric otherwise turns into junk characters.
- * 2. Flatten lighting by dividing each pixel by its local average, which removes
+ * Turn the photo into a clean, OCR-sized grayscale canvas, entirely in memory:
+ * 1. Find the paper on a small copy. Receipts are bright and colorless, tables usually
+ *    are not, and wood grain or fabric otherwise turns into junk characters.
+ * 2. Cut that region from the full-resolution photo and scale it to TARGET_WIDTH.
+ * 3. Flatten lighting by dividing each pixel by its local average, which removes
  *    phone shadows and uneven thermal paper without losing faint ink.
  * Nothing leaves the device. Kept self-contained so it can run in a test harness.
  */
-async function preprocess(file: Blob, crop = true): Promise<HTMLCanvasElement> {
+async function preprocess(file: Blob, crop = true, deskew = true): Promise<HTMLCanvasElement> {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-  const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+  try {
+    const [x0, y0, x1, y1] = crop ? findPaper(bitmap) : [0, 0, bitmap.width, bitmap.height];
+    const cw = x1 - x0;
+    const ch = y1 - y0;
+    let scale = Math.min(MAX_SCALE, TARGET_WIDTH / cw);
+    if (cw * ch * scale * scale > MAX_PIXELS) scale = Math.sqrt(MAX_PIXELS / (cw * ch));
+    const w = Math.max(1, Math.round(cw * scale));
+    const h = Math.max(1, Math.round(ch * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) throw new Error("Canvas is not available in this browser.");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(bitmap, x0, y0, cw, ch, 0, 0, w, h);
+
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    const gray = new Float32Array(w * h);
+    for (let i = 0, k = 0; i < gray.length; i++, k += 4) gray[i] = (d[k] * 299 + d[k + 1] * 587 + d[k + 2] * 114) / 1000;
+
+    // Integral image for fast local means.
+    const W = w + 1;
+    const sum = new Float64Array(W * (h + 1));
+    for (let y = 0; y < h; y++) {
+      let row = 0;
+      for (let x = 0; x < w; x++) {
+        row += gray[y * w + x];
+        sum[(y + 1) * W + x + 1] = sum[y * W + x + 1] + row;
+      }
+    }
+    const r = Math.max(8, Math.round(Math.max(w, h) / 40));
+    for (let y = 0; y < h; y++) {
+      const ya = Math.max(0, y - r);
+      const yb = Math.min(h, y + r + 1);
+      for (let x = 0; x < w; x++) {
+        const xa = Math.max(0, x - r);
+        const xb = Math.min(w, x + r + 1);
+        const mean = (sum[yb * W + xb] - sum[ya * W + xb] - sum[yb * W + xa] + sum[ya * W + xa]) / ((xb - xa) * (yb - ya));
+        // Paper sits near 1.0 of its surroundings and ink well below; stretch that gap to black on white.
+        const v = Math.max(0, Math.min(255, 255 - (1 - gray[y * w + x] / Math.max(1, mean)) * 510));
+        const k = (y * w + x) * 4;
+        d[k] = d[k + 1] = d[k + 2] = v;
+        d[k + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    if (!deskew) return canvas;
+    const angle = skewAngle(d, w, h);
+    if (Math.abs(angle) < 0.4) return canvas;
+    // Rotate onto a white canvas so the corners don't read as ink.
+    // skewAngle reports the correction directly: rotating by it levels the lines.
+    const rad = (angle * Math.PI) / 180;
+    const rw = Math.ceil(Math.abs(w * Math.cos(rad)) + Math.abs(h * Math.sin(rad)));
+    const rh = Math.ceil(Math.abs(w * Math.sin(rad)) + Math.abs(h * Math.cos(rad)));
+    const out = document.createElement("canvas");
+    out.width = rw;
+    out.height = rh;
+    const octx = out.getContext("2d");
+    if (!octx) return canvas;
+    octx.fillStyle = "#fff";
+    octx.fillRect(0, 0, rw, rh);
+    octx.translate(rw / 2, rh / 2);
+    octx.rotate(rad);
+    octx.drawImage(canvas, -w / 2, -h / 2);
+    canvas.width = canvas.height = 0;
+    return out;
+  } finally {
+    bitmap.close();
+  }
+}
+
+/**
+ * Text tilt in degrees, found by trying angles and keeping the one where ink pixels stack
+ * into the sharpest horizontal rows. Tilted lines make Tesseract pair prices with the wrong item.
+ */
+function skewAngle(rgba: Uint8ClampedArray, w: number, h: number): number {
+  const step = Math.max(1, Math.round(w / 500));
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      if (rgba[(y * w + x) * 4] < 110) {
+        xs.push(x - w / 2);
+        ys.push(y);
+      }
+    }
+  }
+  if (xs.length < 200) return 0;
+  const bin = Math.max(2, step * 2);
+  const bins = Math.ceil((h + w) / bin) + 2;
+  const hist = new Float64Array(bins);
+  let best = 0;
+  let bestScore = -1;
+  for (let a = -8; a <= 8.001; a += 0.25) {
+    const t = Math.tan((a * Math.PI) / 180);
+    hist.fill(0);
+    for (let i = 0; i < xs.length; i++) {
+      const b = Math.floor((ys[i] + xs[i] * t + w) / bin);
+      if (b >= 0 && b < bins) hist[b]++;
+    }
+    let score = 0;
+    for (let i = 0; i < bins; i++) score += hist[i] * hist[i];
+    if (score > bestScore) {
+      bestScore = score;
+      best = a;
+    }
+  }
+  return best;
+}
+
+/**
+ * Box around the printed text on a small image: pixels clearly darker than their surroundings,
+ * trimmed to the 1st to 99th percentile so stray specks don't stretch it.
+ */
+function inkBox(rgba: Uint8ClampedArray, w: number, h: number): [number, number, number, number] | null {
+  const gray = new Float32Array(w * h);
+  for (let i = 0, k = 0; i < gray.length; i++, k += 4) gray[i] = (rgba[k] * 299 + rgba[k + 1] * 587 + rgba[k + 2] * 114) / 1000;
+  const W = w + 1;
+  const sum = new Float64Array(W * (h + 1));
+  for (let y = 0; y < h; y++) {
+    let row = 0;
+    for (let x = 0; x < w; x++) {
+      row += gray[y * w + x];
+      sum[(y + 1) * W + x + 1] = sum[y * W + x + 1] + row;
+    }
+  }
+  const r = Math.max(4, Math.round(Math.max(w, h) / 60));
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let y = 0; y < h; y++) {
+    const ya = Math.max(0, y - r);
+    const yb = Math.min(h, y + r + 1);
+    for (let x = 0; x < w; x++) {
+      const xa = Math.max(0, x - r);
+      const xb = Math.min(w, x + r + 1);
+      const mean = (sum[yb * W + xb] - sum[ya * W + xb] - sum[yb * W + xa] + sum[ya * W + xa]) / ((xb - xa) * (yb - ya));
+      const g = gray[y * w + x];
+      if (g < mean * 0.78 && g < 170) {
+        xs.push(x);
+        ys.push(y);
+      }
+    }
+  }
+  if (xs.length < 100) return null;
+  const pct = (a: number[], p: number) => a.sort((m, n) => m - n)[Math.floor((a.length - 1) * p)];
+  const box: [number, number, number, number] = [pct(xs, 0.01), pct(ys, 0.01), pct(xs, 0.99) + 1, pct(ys, 0.99) + 1];
+  return (box[2] - box[0]) * (box[3] - box[1]) < w * h * 0.8 ? box : null;
+}
+
+/** Bounding box of the receipt paper in full-resolution pixels: [x0, y0, x1, y1]. */
+function findPaper(bitmap: ImageBitmap): [number, number, number, number] {
+  const scale = Math.min(1, DETECT_EDGE / Math.max(bitmap.width, bitmap.height));
   const sw = Math.max(1, Math.round(bitmap.width * scale));
   const sh = Math.max(1, Math.round(bitmap.height * scale));
-  const src = document.createElement("canvas");
-  src.width = sw;
-  src.height = sh;
-  const sctx = src.getContext("2d", { willReadFrequently: true });
-  if (!sctx) {
-    bitmap.close();
-    throw new Error("Canvas is not available in this browser.");
-  }
+  const small = document.createElement("canvas");
+  small.width = sw;
+  small.height = sh;
+  const sctx = small.getContext("2d", { willReadFrequently: true });
+  if (!sctx) return [0, 0, bitmap.width, bitmap.height];
   sctx.drawImage(bitmap, 0, 0, sw, sh);
-  bitmap.close();
   const rgba = sctx.getImageData(0, 0, sw, sh).data;
-  src.width = src.height = 0;
+  small.width = small.height = 0;
 
   // Paper mask: low chroma and not dark.
   const paper = new Uint8Array(sw * sh);
-  const gray = new Float32Array(sw * sh);
   for (let i = 0, k = 0; i < paper.length; i++, k += 4) {
     const r = rgba[k];
     const g = rgba[k + 1];
     const b = rgba[k + 2];
-    gray[i] = (r * 299 + g * 587 + b * 114) / 1000;
-    paper[i] = Math.max(r, g, b) - Math.min(r, g, b) < 38 && gray[i] > 90 ? 1 : 0;
+    const gray = (r * 299 + g * 587 + b * 114) / 1000;
+    paper[i] = Math.max(r, g, b) - Math.min(r, g, b) < 38 && gray > 90 ? 1 : 0;
   }
 
-  // Longest run of columns (then rows) that are mostly paper.
+  // Longest run of indexes that pass: the receipt is one vertical strip of paper.
   const longestRun = (len: number, isPaper: (i: number) => boolean): [number, number] => {
     let best: [number, number] = [0, len];
     let bestLen = 0;
@@ -63,18 +222,8 @@ async function preprocess(file: Blob, crop = true): Promise<HTMLCanvasElement> {
     }
     return bestLen > len * 0.25 ? best : [0, len];
   };
-  const colFrac = (x: number, y0: number, y1: number) => {
-    let n = 0;
-    for (let y = y0; y < y1; y++) n += paper[y * sw + x];
-    return n / Math.max(1, y1 - y0);
-  };
-  const rowFrac = (y: number, x0: number, x1: number) => {
-    let n = 0;
-    for (let x = x0; x < x1; x++) n += paper[y * sw + x];
-    return n / Math.max(1, x1 - x0);
-  };
-  // First to last index that passes. Unlike longestRun this tolerates gaps, such as a
-  // card, a thumb or a fold lying across the receipt.
+  // First to last index that passes. Tolerates gaps, such as a card, a thumb or a fold
+  // lying across the receipt.
   const span = (len: number, isPaper: (i: number) => boolean): [number, number] => {
     let first = -1;
     let last = -1;
@@ -85,52 +234,38 @@ async function preprocess(file: Blob, crop = true): Promise<HTMLCanvasElement> {
     }
     return first >= 0 && last - first > len * 0.25 ? [first, last + 1] : [0, len];
   };
-  let [x0, x1] = crop ? longestRun(sw, (x) => colFrac(x, 0, sh) > 0.5) : [0, sw];
-  const [y0, y1] = crop ? span(sh, (y) => rowFrac(y, x0, x1) > 0.6) : [0, sh];
-  if (crop) [x0, x1] = longestRun(sw, (x) => colFrac(x, y0, y1) > 0.5);
-  // Small margin so edge characters survive.
-  const pad = Math.round(Math.max(sw, sh) * 0.01);
-  x0 = Math.max(0, x0 - pad);
-  x1 = Math.min(sw, x1 + pad);
-  const cy0 = Math.max(0, y0 - pad);
-  const cy1 = Math.min(sh, y1 + pad);
-  const w = x1 - x0;
-  const h = cy1 - cy0;
+  const colFrac = (x: number, y0: number, y1: number) => {
+    let n = 0;
+    for (let y = y0; y < y1; y++) n += paper[y * sw + x];
+    return n / Math.max(1, y1 - y0);
+  };
+  const rowFrac = (y: number, x0: number, x1: number) => {
+    let n = 0;
+    for (let x = x0; x < x1; x++) n += paper[y * sw + x];
+    return n / Math.max(1, x1 - x0);
+  };
 
-  // Integral image of the crop for fast local means.
-  const W = w + 1;
-  const sum = new Float64Array(W * (h + 1));
-  for (let y = 0; y < h; y++) {
-    let row = 0;
-    for (let x = 0; x < w; x++) {
-      row += gray[(y + cy0) * sw + x + x0];
-      sum[(y + 1) * W + x + 1] = sum[y * W + x + 1] + row;
+  let [x0, x1] = longestRun(sw, (x) => colFrac(x, 0, sh) > 0.5);
+  let [y0, y1] = span(sh, (y) => rowFrac(y, x0, x1) > 0.6);
+  [x0, x1] = longestRun(sw, (x) => colFrac(x, y0, y1) > 0.5);
+  let pad = Math.round(Math.max(sw, sh) * 0.01);
+
+  // On a pale, plain table the paper test passes everywhere. Fall back to where the text is.
+  if ((x1 - x0) * (y1 - y0) > sw * sh * 0.8) {
+    const box = inkBox(rgba, sw, sh);
+    if (box) {
+      [x0, y0, x1, y1] = box;
+      pad = Math.round(Math.max(sw, sh) * 0.04);
     }
   }
-  const r = Math.max(8, Math.round(Math.max(w, h) / 40));
-
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas is not available in this browser.");
-  const out = ctx.createImageData(w, h);
-  const d = out.data;
-  for (let y = 0; y < h; y++) {
-    const ya = Math.max(0, y - r);
-    const yb = Math.min(h, y + r + 1);
-    for (let x = 0; x < w; x++) {
-      const xa = Math.max(0, x - r);
-      const xb = Math.min(w, x + r + 1);
-      const mean = (sum[yb * W + xb] - sum[ya * W + xb] - sum[yb * W + xa] + sum[ya * W + xa]) / ((xb - xa) * (yb - ya));
-      const v = Math.max(0, Math.min(255, (gray[(y + cy0) * sw + x + x0] / Math.max(1, mean)) * 255 - 20));
-      const k = (y * w + x) * 4;
-      d[k] = d[k + 1] = d[k + 2] = v;
-      d[k + 3] = 255;
-    }
-  }
-  ctx.putImageData(out, 0, 0);
-  return canvas;
+  // Small margin so edge characters survive, then back to full-resolution pixels.
+  const toFull = (v: number) => Math.round(v / scale);
+  return [
+    toFull(Math.max(0, x0 - pad)),
+    toFull(Math.max(0, y0 - pad)),
+    Math.min(bitmap.width, toFull(Math.min(sw, x1 + pad))),
+    Math.min(bitmap.height, toFull(Math.min(sh, y1 + pad))),
+  ];
 }
 
 const STATUS_LABELS: Record<string, string> = {
