@@ -38,6 +38,46 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/**
+ * Opens the system share sheet (Messages, WhatsApp, Mail...) where available and
+ * falls back to the clipboard. Returns what happened so the button can say so.
+ */
+export async function shareText(text: string): Promise<"shared" | "copied" | "cancelled" | "failed"> {
+  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    try {
+      await navigator.share({ text });
+      return "shared";
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return "cancelled";
+      // Some desktop browsers expose share() but refuse plain text: fall back to copying.
+    }
+  }
+  return (await copyText(text)) ? "copied" : "failed";
+}
+
+/** iOS style on/off switch. */
+export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => {
+        haptic();
+        onChange(!checked);
+      }}
+      className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors ${checked ? "bg-ok" : "bg-fill-strong"}`}
+    >
+      <span
+        className={`absolute top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow-[0_3px_8px_rgba(0,0,0,0.15),0_3px_1px_rgba(0,0,0,0.06)] transition-[left] ${
+          checked ? "left-[22px]" : "left-[2px]"
+        }`}
+      />
+    </button>
+  );
+}
+
 export function Money({ cents, className = "" }: { cents: number; className?: string }) {
   return <span className={`tabular-nums ${className}`}>{formatMoney(cents)}</span>;
 }
@@ -197,7 +237,7 @@ export function Row({ label, children, strong }: { label: ReactNode; children?: 
   );
 }
 
-type IconName = "camera" | "image" | "plus" | "trash" | "copy" | "check" | "chevron-left" | "doc" | "paste";
+type IconName = "camera" | "image" | "plus" | "trash" | "copy" | "check" | "chevron-left" | "doc" | "paste" | "share" | "check-circle";
 
 export function Icon({ name, className = "h-5 w-5" }: { name: IconName; className?: string }) {
   const common = {
@@ -255,6 +295,20 @@ export function Icon({ name, className = "h-5 w-5" }: { name: IconName; classNam
       return (
         <svg {...common} strokeWidth={2.4}>
           <path d="M15 5l-7 7 7 7" />
+        </svg>
+      );
+    case "share":
+      return (
+        <svg {...common}>
+          <path d="M12 3.5v11M8 7.5l4-4 4 4" />
+          <path d="M8.5 10.5H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1.5" />
+        </svg>
+      );
+    case "check-circle":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="m8.5 12.2 2.4 2.4 4.6-5" />
         </svg>
       );
     case "paste":

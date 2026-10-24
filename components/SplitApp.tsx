@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { STEPS, useCheck, type Step } from "@/lib/store";
+import { STEPS, useCheck, usePayHandles, type Step } from "@/lib/store";
 import { computeSplit } from "@/lib/split";
 import { parseReceiptText } from "@/lib/parser";
 import { analyzeTax } from "@/lib/taxcheck";
@@ -20,6 +20,7 @@ export type ScanState =
 
 export default function SplitApp() {
   const [state, dispatch] = useCheck();
+  const { handles, setHandles, restored, clearRestored } = usePayHandles();
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [scan, setScan] = useState<ScanState>({ phase: "idle" });
   const abortRef = useRef<AbortController | null>(null);
@@ -223,6 +224,15 @@ export default function SplitApp() {
       </header>
 
       <main className="mx-auto w-full max-w-xl flex-1 px-4 pb-[calc(var(--safe-bottom)+8rem)] pt-6 lg:max-w-6xl lg:px-8 lg:pb-16 lg:pt-8">
+        {restored && (
+          <div role="status" className="group mb-6 flex items-center gap-3 px-4 lg:mx-auto lg:max-w-2xl">
+            <Icon name="check" className="h-5 w-5 shrink-0 text-ok" />
+            <p className="flex-1 py-3 text-[15px]">Your payment details were restored from your backup link.</p>
+            <button type="button" className="link text-[15px]" onClick={clearRestored}>
+              OK
+            </button>
+          </div>
+        )}
         {state.step === "scan" && (
           <ScanStep
             scan={scan}
@@ -237,7 +247,7 @@ export default function SplitApp() {
         )}
         {state.step === "items" && <ItemsStep state={state} dispatch={dispatch} photoUrl={photoUrl} taxInsight={taxInsight} />}
         {state.step === "split" && <SplitStep state={state} dispatch={dispatch} result={result} />}
-        {state.step === "totals" && <TotalsStep state={state} dispatch={dispatch} result={result} />}
+        {state.step === "totals" && <TotalsStep state={state} dispatch={dispatch} result={result} handles={handles} setHandles={setHandles} />}
       </main>
 
       <BottomBar
