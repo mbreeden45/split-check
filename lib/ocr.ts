@@ -248,7 +248,8 @@ function findPaper(bitmap: ImageBitmap): [number, number, number, number] {
   let [x0, x1] = longestRun(sw, (x) => colFrac(x, 0, sh) > 0.5);
   let [y0, y1] = span(sh, (y) => rowFrac(y, x0, x1) > 0.6);
   [x0, x1] = longestRun(sw, (x) => colFrac(x, y0, y1) > 0.5);
-  let pad = Math.round(Math.max(sw, sh) * 0.01);
+  // Generous margin: tilted or curled edges otherwise lose their first letters.
+  let pad = Math.round(Math.max(sw, sh) * 0.03);
 
   // On a pale, plain table the paper test passes everywhere. Fall back to where the text is.
   if ((x1 - x0) * (y1 - y0) > sw * sh * 0.8) {
@@ -281,8 +282,9 @@ const STATUS_LABELS: Record<string, string> = {
 
 /**
  * Run OCR fully in the browser. tesseract.js is imported on demand to keep the first load light.
- * The photo is cropped to the paper first. If `score` says that read went badly (below
- * `minScore`), it reads the whole photo again and keeps whichever text scored higher.
+ * The photo is cropped to the paper first. If `score` says that read isn't trustworthy
+ * (below `minScore`, e.g. the items don't add up to the subtotal), it reads the whole photo
+ * again and keeps whichever text scored higher.
  */
 export async function recognizeReceipt(
   file: Blob,

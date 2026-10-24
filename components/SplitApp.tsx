@@ -13,6 +13,18 @@ import ItemsStep from "./ItemsStep";
 import SplitStep from "./SplitStep";
 import TotalsStep from "./TotalsStep";
 
+const RECONCILED = 1000;
+
+/**
+ * How trustworthy a read looks. Items that add up exactly to the printed subtotal are
+ * almost certainly right; otherwise more items is better.
+ */
+function receiptQuality(text: string): number {
+  const r = parseReceiptText(text);
+  const sum = r.items.reduce((a, i) => a + i.priceCents, 0);
+  return (r.subtotalCents !== null && r.items.length > 0 && sum === r.subtotalCents ? RECONCILED : 0) + r.items.length;
+}
+
 export type ScanState =
   | { phase: "idle" }
   | { phase: "working"; progress: OcrProgress }
@@ -95,7 +107,8 @@ export default function SplitApp() {
             if (!controller.signal.aborted) setScan({ phase: "working", progress });
           },
           controller.signal,
-          (t) => parseReceiptText(t).items.length,
+          receiptQuality,
+          RECONCILED,
         );
         if (controller.signal.aborted) return;
         const parsed = parseReceiptText(text);

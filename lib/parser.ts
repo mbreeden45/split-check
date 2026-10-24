@@ -59,9 +59,23 @@ export function guessKind(name: string): ItemKind {
   return DRINK_RE.test(name) ? "drink" : "food";
 }
 
+/** Letters OCR commonly reads in place of digits, applied only inside price-like tokens. */
+const DIGITISH: Record<string, string> = { O: "0", o: "0", D: "0", l: "1", I: "1", i: "1", s: "5", S: "5", B: "8", Z: "2", z: "2", g: "9" };
+
 /** Fix the most common OCR confusions inside price-like tokens. */
 function normalizeLine(raw: string): string {
-  const line = raw.replace(/[|]/g, " ").replace(/\s+/g, " ").trim();
+  let line = raw.replace(/\s+/g, " ").trim();
+  // A leading quantity of 1 often reads as "I", "l" or "|".
+  line = line.replace(/^[Il|](?=\s+[A-Za-z])/, "1");
+  line = line.replace(/[|]/g, " ").replace(/\s+/g, " ").trim();
+  // "4s.90" -> "45.90": a letter between digits right before the cents.
+  line = line.replace(/(^|[\s$(-])([0-9OolIisSBZzgD]{1,5})([.,])([0-9OolIisSBZzgD]{2})(?![\w.,])/g, (m, pre, a, dot, b) => {
+    if ((a + b).replace(/[^0-9]/g, "").length < 2) return m;
+    const fix = (t: string) => t.replace(/[OolIisSBZzgD]/g, (c) => DIGITISH[c] ?? c);
+    return `${pre}${fix(a)}${dot}${fix(b)}`;
+  });
+  // "$2295" at the end of a line is $22.95 with the decimal point lost.
+  line = line.replace(/\$(\d{1,3})(\d{2})\s*$/, (_m, d, c) => `$${d}.${c}`);
   // A space may follow a decimal point ("12. 50") but never a comma, so "Jun 26, 15" stays a date.
   return line.replace(/(^|[\s$S(-])([0-9OolI]{1,5})(?:\.\s?|,)([0-9OolI]{2})(?![\w.,])/g, (m, pre, a, b) => {
     if (!/\d/.test(a + b)) return m;
