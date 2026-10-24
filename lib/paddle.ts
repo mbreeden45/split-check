@@ -17,6 +17,38 @@ function resetWorker() {
   worker = null;
 }
 
+/** Receipt width handed to the reader. Small print needs room; more only costs time. */
+const TARGET_WIDTH = 1400;
+
+/**
+ * Crop the photo to the receipt and scale it so the print is large enough to read.
+ * Receipts photographed from across the table can fill a third of the frame.
+ */
+async function receiptImage(file: Blob): Promise<ImageBitmap> {
+  const photo = await createImageBitmap(file, { imageOrientation: "from-image" });
+  try {
+    const { findPaper } = await import("./ocr");
+    const [x0, y0, x1, y1] = findPaper(photo);
+    const cw = x1 - x0;
+    const ch = y1 - y0;
+    let scale = Math.min(4, TARGET_WIDTH / cw);
+    if (cw * ch * scale * scale > TARGET_WIDTH * 6000) scale = Math.sqrt((TARGET_WIDTH * 6000) / (cw * ch));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(cw * scale));
+    canvas.height = Math.max(1, Math.round(ch * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return photo;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(photo, x0, y0, cw, ch, 0, 0, canvas.width, canvas.height);
+    photo.close();
+    const out = await createImageBitmap(canvas);
+    canvas.width = canvas.height = 0;
+    return out;
+  } catch {
+    return photo;
+  }
+}
+
 /** Read a receipt photo with PaddleOCR in a worker. Rejects if this browser can't run it. */
 export async function recognizeWithPaddle(
   file: Blob,
@@ -26,7 +58,7 @@ export async function recognizeWithPaddle(
   if (typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined") {
     throw new Error("This browser can't run the on-device reader.");
   }
-  const image = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const image = await receiptImage(file);
   const w = getWorker();
   const id = nextId++;
 
