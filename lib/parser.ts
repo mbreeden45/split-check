@@ -68,6 +68,8 @@ function normalizeLine(raw: string): string {
   // A leading quantity of 1 often reads as "I", "l" or "|".
   line = line.replace(/^[Il|](?=\s+[A-Za-z])/, "1");
   line = line.replace(/[|]/g, " ").replace(/\s+/g, " ").trim();
+  // "S113.25": a dollar sign read as S, not a 5. Real 5s rarely start a four digit price.
+  line = line.replace(/(^|\s)[Ss](?=\d{1,4}[.,]\d{2}(?![\d.,]))/g, "$1$");
   // "4s.90" -> "45.90": a letter between digits right before the cents.
   line = line.replace(/(^|[\s$(-])([0-9OolIisSBZzgD]{1,5})([.,])([0-9OolIisSBZzgD]{2})(?![\w.,])/g, (m, pre, a, dot, b) => {
     if ((a + b).replace(/[^0-9]/g, "").length < 2) return m;
