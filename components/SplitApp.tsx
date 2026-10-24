@@ -89,9 +89,14 @@ export default function SplitApp() {
 
       try {
         const { recognizeReceipt } = await import("@/lib/ocr");
-        const text = await recognizeReceipt(file, (progress) => {
-          if (!controller.signal.aborted) setScan({ phase: "working", progress });
-        }, controller.signal);
+        const text = await recognizeReceipt(
+          file,
+          (progress) => {
+            if (!controller.signal.aborted) setScan({ phase: "working", progress });
+          },
+          controller.signal,
+          (t) => parseReceiptText(t).items.length,
+        );
         if (controller.signal.aborted) return;
         const parsed = parseReceiptText(text);
         dispatch({

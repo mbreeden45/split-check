@@ -29,6 +29,9 @@ export interface ParsedReceipt {
 export const LINE_RE =
   /^\s*(?:(\d{1,2})\s*[xX@]?\s+)?(.+?)\s+[$S]?\s?(-?\d{1,5}[.,]\d{2})(?![\d.,])(.{0,14})$/;
 
+/** A price alone on its line, as when the Subtotal / Tax / Total labels are hidden. */
+const BARE_RE = /^\s*[$S]?\s?(\d{1,5}[.,]\d{2})(?![\d.,])(.{0,6})$/;
+
 /** Add-on lines printed under an item, e.g. "-American Cheese 1.34" or "+ Bacon 2.00". */
 const MODIFIER_RE = /^\s*[-+~=>*]+\s*[A-Za-z]/;
 
@@ -95,9 +98,18 @@ export function parseReceiptText(text: string): ParsedReceipt {
     drinksTaxed: false,
   };
 
+  // Every amount in reading order, so an unlabeled totals block can be found afterwards.
+  const amounts: { cents: number; itemsBefore: number }[] = [];
+
   for (const raw of text.split(/\r?\n/)) {
     const line = normalizeLine(raw);
     if (line.length < 4) continue;
+    const bare = BARE_RE.exec(line);
+    if (bare && isJunkTail(bare[2])) {
+      const cents = toCents(bare[1]);
+      if (cents !== null) amounts.push({ cents, itemsBefore: out.items.length });
+      continue;
+    }
     const m = LINE_RE.exec(line);
     if (!m) continue;
 
@@ -106,6 +118,7 @@ export function parseReceiptText(text: string): ParsedReceipt {
     const priceCents = toCents(priceStr);
     if (priceCents === null) continue;
     const name = cleanName(rawName);
+    amounts.push({ cents: priceCents, itemsBefore: out.items.length });
 
     if (SUBTOTAL_RE.test(name)) {
       out.subtotalCents = priceCents;
@@ -136,6 +149,8 @@ export function parseReceiptText(text: string): ParsedReceipt {
     out.items.push({ name, qty, priceCents, kind: guessKind(name) });
   }
 
+  if (out.subtotalCents === null) findUnlabeledTotals(out, amounts);
+
   if (out.taxCents !== null) {
     const all = out.items.reduce((a, i) => a + i.priceCents, 0);
     const food = out.items.filter((i) => i.kind === "food").reduce((a, i) => a + i.priceCents, 0);
@@ -146,4 +161,28 @@ export function parseReceiptText(text: string): ParsedReceipt {
   }
 
   return out;
+}
+
+/**
+ * When a card or thumb hides the labels, the totals block still has a shape: a line equal
+ * to the sum of every item above it (subtotal), then tax, then a total equal to the two
+ * added together. Anything after the subtotal is not an item.
+ */
+function findUnlabeledTotals(out: ParsedReceipt, amounts: { cents: number; itemsBefore: number }[]) {
+  const sumOf = (n: number) => out.items.slice(0, n).reduce((a, i) => a + i.priceCents, 0);
+  const at = amounts.findIndex((a) => a.itemsBefore >= 2 && Math.abs(a.cents - sumOf(a.itemsBefore)) <= 1);
+  if (at < 0) return;
+  const subtotal = amounts[at];
+  out.items = out.items.slice(0, subtotal.itemsBefore);
+  out.subtotalCents = subtotal.cents;
+
+  const next = amounts[at + 1];
+  const after = amounts[at + 2];
+  if (next && after && Math.abs(subtotal.cents + next.cents - after.cents) <= 1) {
+    out.taxCents = next.cents;
+    out.totalCents = after.cents;
+  } else if (next && next.cents > subtotal.cents && next.cents - subtotal.cents <= subtotal.cents * 0.15) {
+    out.totalCents = next.cents;
+    out.taxCents = next.cents - subtotal.cents;
+  }
 }

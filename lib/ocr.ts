@@ -16,7 +16,7 @@ const MAX_EDGE = 2200;
  *    phone shadows and uneven thermal paper without losing faint ink.
  * Nothing leaves the device. Kept self-contained so it can run in a test harness.
  */
-async function preprocess(file: Blob): Promise<HTMLCanvasElement> {
+async function preprocess(file: Blob, crop = true): Promise<HTMLCanvasElement> {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
   const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
   const sw = Math.max(1, Math.round(bitmap.width * scale));
@@ -73,9 +73,21 @@ async function preprocess(file: Blob): Promise<HTMLCanvasElement> {
     for (let x = x0; x < x1; x++) n += paper[y * sw + x];
     return n / Math.max(1, x1 - x0);
   };
-  let [x0, x1] = longestRun(sw, (x) => colFrac(x, 0, sh) > 0.5);
-  const [y0, y1] = longestRun(sh, (y) => rowFrac(y, x0, x1) > 0.6);
-  [x0, x1] = longestRun(sw, (x) => colFrac(x, y0, y1) > 0.6);
+  // First to last index that passes. Unlike longestRun this tolerates gaps, such as a
+  // card, a thumb or a fold lying across the receipt.
+  const span = (len: number, isPaper: (i: number) => boolean): [number, number] => {
+    let first = -1;
+    let last = -1;
+    for (let i = 0; i < len; i++) {
+      if (!isPaper(i)) continue;
+      if (first < 0) first = i;
+      last = i;
+    }
+    return first >= 0 && last - first > len * 0.25 ? [first, last + 1] : [0, len];
+  };
+  let [x0, x1] = crop ? longestRun(sw, (x) => colFrac(x, 0, sh) > 0.5) : [0, sw];
+  const [y0, y1] = crop ? span(sh, (y) => rowFrac(y, x0, x1) > 0.6) : [0, sh];
+  if (crop) [x0, x1] = longestRun(sw, (x) => colFrac(x, y0, y1) > 0.5);
   // Small margin so edge characters survive.
   const pad = Math.round(Math.max(sw, sh) * 0.01);
   x0 = Math.max(0, x0 - pad);
@@ -132,33 +144,49 @@ const STATUS_LABELS: Record<string, string> = {
   "recognizing text": "Reading receipt",
 };
 
-/** Run OCR fully in the browser. tesseract.js is imported on demand to keep the first load light. */
+/**
+ * Run OCR fully in the browser. tesseract.js is imported on demand to keep the first load light.
+ * The photo is cropped to the paper first. If `score` says that read went badly (below
+ * `minScore`), it reads the whole photo again and keeps whichever text scored higher.
+ */
 export async function recognizeReceipt(
   file: Blob,
   onProgress: (p: OcrProgress) => void,
   signal?: AbortSignal,
+  score?: (text: string) => number,
+  minScore = 2,
 ): Promise<string> {
   onProgress({ status: "Preparing photo", progress: 0 });
   const [canvas, Tesseract] = await Promise.all([preprocess(file), import("tesseract.js")]);
   if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
 
+  let pass = 1;
   const worker = await Tesseract.createWorker("eng", Tesseract.OEM.LSTM_ONLY, {
     logger: (m) => {
-      onProgress({ status: STATUS_LABELS[m.status] ?? "Working", progress: m.progress ?? 0 });
+      const status = STATUS_LABELS[m.status] ?? "Working";
+      onProgress({ status: pass > 1 && m.status === "recognizing text" ? "Reading again without cropping" : status, progress: m.progress ?? 0 });
     },
   });
   const abort = () => void worker.terminate().catch(() => {});
   signal?.addEventListener("abort", abort, { once: true });
 
+  const read = async (c: HTMLCanvasElement) => {
+    const { data } = await worker.recognize(c);
+    c.width = c.height = 0;
+    if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+    return data.text ?? "";
+  };
+
   try {
     // A single uniform block keeps each price on the same line as its description.
     await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK });
-    const { data } = await worker.recognize(canvas);
-    if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-    return data.text ?? "";
+    const first = await read(canvas);
+    if (!score || score(first) >= minScore) return first;
+    pass = 2;
+    const second = await read(await preprocess(file, false));
+    return score(second) > score(first) ? second : first;
   } finally {
     signal?.removeEventListener("abort", abort);
-    canvas.width = canvas.height = 0;
     await worker.terminate().catch(() => {});
   }
 }
