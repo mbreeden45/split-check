@@ -243,7 +243,10 @@ export function parseReceiptText(text: string): ParsedReceipt {
       continue;
     }
 
-    addItem(name, qtyStr ? Math.max(1, parseInt(qtyStr, 10)) : 1, priceCents);
+    // Quantities on a check are small; "1 6 Wings" read as "16 Wings" means six wings, not sixteen orders.
+    const qty = qtyStr ? parseInt(qtyStr, 10) : 1;
+    if (qty >= 10) addItem(`${qtyStr} ${name}`.replace(/^(\d)(\d)\s/, "$1 $2 ").replace(/^1 /, ""), 1, priceCents);
+    else addItem(name, Math.max(1, qty), priceCents);
   }
 
   if (out.subtotalCents === null) findUnlabeledTotals(out, amounts);
