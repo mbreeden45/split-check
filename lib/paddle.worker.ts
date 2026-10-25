@@ -20,8 +20,8 @@ const MODELS = [
   { url: "/models/dict-en.txt", bytes: 1_417 },
 ];
 
-/** Longest side handed to OCR. Larger costs time without helping a receipt. */
-const MAX_SIDE = 2400;
+/** Safety cap on the longest side. The page already sized the receipt; the library resizes internally. */
+const MAX_SIDE = 6000;
 
 let service: Promise<PaddleOcrService> | null = null;
 

@@ -205,3 +205,19 @@ describe("real receipt: Barney's via PaddleOCR", () => {
     expect(r.items[2]).toMatchObject({ qty: 1, name: "6 Wings" });
   });
 });
+
+describe("OCR misreads in prices", () => {
+  it("reads a leading S as a dollar sign and letters inside prices as digits", () => {
+    const r = parseReceiptText("3 Lobster Roll S113.25\nBuffalo Wings $23.25\nLunch 4s.90\nSubtotal $181.40");
+    expect(r.items.map((i) => i.priceCents)).toEqual([11325, 2325, 4590]);
+    expect(r.subtotalCents).toBe(18140);
+  });
+});
+
+describe("summary labels wrapped onto two lines", () => {
+  it("pairs TAX with the amount on the next line", () => {
+    const r = parseReceiptText("Tiramisu $8.00\nPinot Grigio $13.75\nSubtotal $21.75\nTAX\n$2.07\nAmount Due $23.82\n18%: Tip $4.29");
+    expect(r.items.map((i) => i.priceCents)).toEqual([800, 1375]);
+    expect([r.subtotalCents, r.taxCents, r.totalCents]).toEqual([2175, 207, 2382]);
+  });
+});

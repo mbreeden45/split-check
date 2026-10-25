@@ -181,7 +181,7 @@ function inkBox(rgba: Uint8ClampedArray, w: number, h: number): [number, number,
 }
 
 /** Bounding box of the receipt paper in full-resolution pixels: [x0, y0, x1, y1]. */
-function findPaper(bitmap: ImageBitmap): [number, number, number, number] {
+export function findPaper(bitmap: ImageBitmap): [number, number, number, number] {
   const scale = Math.min(1, DETECT_EDGE / Math.max(bitmap.width, bitmap.height));
   const sw = Math.max(1, Math.round(bitmap.width * scale));
   const sh = Math.max(1, Math.round(bitmap.height * scale));

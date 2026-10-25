@@ -115,6 +115,16 @@ export default function SplitApp() {
         try {
           const { recognizeWithPaddle } = await import("@/lib/paddle");
           text = await recognizeWithPaddle(file, report, controller.signal);
+          // Items don't add up: the receipt may be small in the frame. Read a cropped, enlarged copy.
+          if (receiptQuality(text) < RECONCILED) {
+            const cropped = await recognizeWithPaddle(
+              file,
+              (p) => report({ status: "Taking a closer look", progress: p.progress }),
+              controller.signal,
+              true,
+            );
+            if (receiptQuality(cropped) >= RECONCILED) text = cropped;
+          }
         } catch (err) {
           if (controller.signal.aborted) return;
           console.warn("On-device reader unavailable, using backup reader", err);
