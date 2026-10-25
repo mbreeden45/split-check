@@ -21,7 +21,13 @@ Stack: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4.
 | Unclaimed items | Shown in red with the exact amount (items plus their tax and tip) that nobody is covering yet. |
 | Tax check | A live Tax Rate row shows tax / taxable items. If it's outside what's normal (the printed rate, your usual rate from your last few checks, or the general US range of about 5.5% to 12%), a hint says which items are probably marked wrong and offers a one-tap fix. With a known rate it finds the exact items that add up to the untaxed amount (`lib/taxcheck.ts`). |
 
-**Reading the photo.** PaddleOCR reads the photo first. If the items it finds don't add up to the printed subtotal (or the browser can't run it), the backup reader runs: Tesseract on a cleaned-up copy of the photo (cropped to the paper, enlarged so small print is legible, straightened, lighting flattened). The backup's result is only used if its items do add up. On a benchmark of 193 hand-photographed US restaurant receipts, this reads every item exactly right on about two thirds of photos (up from about a third with Tesseract alone), and about 94% of the prices it reports are correct. The benchmark scripts are not part of this repo.
+**Reading the photo.** The receipt checks itself: a read is trusted when its items add up to the printed subtotal. The reader tries, in order, and keeps the first read that adds up (or the first read if none do):
+
+1. PaddleOCR on the photo as taken.
+2. PaddleOCR on a copy cropped to the receipt and enlarged, which helps when the receipt is small in the frame (and hurts when it already fills it, so it's only a fallback).
+3. Tesseract on a cleaned-up copy (cropped, enlarged, straightened, lighting flattened). It is also used if the browser can't run PaddleOCR.
+
+On a benchmark of hand-photographed US restaurant receipts, every price comes out exactly right on about 72% of photos (up from about a third with Tesseract alone), and about 95% of the prices shown are correct. The benchmark scripts are not part of this repo.
 
 **Parsing.** The parser (`lib/parser.ts`) matches lines shaped like `(\d+)?\s*(.+?)\s+\$?(\d+\.\d{2})`, hardened for real OCR output and real receipts: `2x` quantities, letters read as digits inside prices, comma decimals, a little junk after the price, prices wrapped onto the next line, discounts in parentheses, category subtotals, and register shorthand like `TXTL` and `Sub/Ttl`. Add-on lines such as `-American Cheese 1.34` are folded into the item above. It reads Subtotal, Tax and Total as summary values and stops at Total, so payment lines and tax summaries are never counted. Drinks are guessed from the name, but if the printed tax only makes sense when drinks were taxed too (checked against the printed rate when there is one), every item is marked Taxable and the app says so. You always get an editable review list afterward.
 

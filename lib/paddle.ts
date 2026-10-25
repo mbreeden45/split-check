@@ -24,8 +24,9 @@ const TARGET_WIDTH = 1400;
  * Crop the photo to the receipt and scale it so the print is large enough to read.
  * Receipts photographed from across the table can fill a third of the frame.
  */
-async function receiptImage(file: Blob): Promise<ImageBitmap> {
+async function receiptImage(file: Blob, crop: boolean): Promise<ImageBitmap> {
   const photo = await createImageBitmap(file, { imageOrientation: "from-image" });
+  if (!crop) return photo;
   try {
     const { findPaper } = await import("./ocr");
     const [x0, y0, x1, y1] = findPaper(photo);
@@ -49,16 +50,21 @@ async function receiptImage(file: Blob): Promise<ImageBitmap> {
   }
 }
 
-/** Read a receipt photo with PaddleOCR in a worker. Rejects if this browser can't run it. */
+/**
+ * Read a receipt photo with PaddleOCR in a worker. Rejects if this browser can't run it.
+ * `crop` reads a cropped, enlarged copy instead: better when the receipt is small in the frame,
+ * worse when it already fills it, so the app only tries it when the first read doesn't add up.
+ */
 export async function recognizeWithPaddle(
   file: Blob,
   onProgress: (p: OcrProgress) => void,
   signal?: AbortSignal,
+  crop = false,
 ): Promise<string> {
   if (typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined") {
     throw new Error("This browser can't run the on-device reader.");
   }
-  const image = await receiptImage(file);
+  const image = await receiptImage(file, crop);
   const w = getWorker();
   const id = nextId++;
 

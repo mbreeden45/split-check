@@ -213,3 +213,11 @@ describe("OCR misreads in prices", () => {
     expect(r.subtotalCents).toBe(18140);
   });
 });
+
+describe("summary labels wrapped onto two lines", () => {
+  it("pairs TAX with the amount on the next line", () => {
+    const r = parseReceiptText("Tiramisu $8.00\nPinot Grigio $13.75\nSubtotal $21.75\nTAX\n$2.07\nAmount Due $23.82\n18%: Tip $4.29");
+    expect(r.items.map((i) => i.priceCents)).toEqual([800, 1375]);
+    expect([r.subtotalCents, r.taxCents, r.totalCents]).toEqual([2175, 207, 2382]);
+  });
+});

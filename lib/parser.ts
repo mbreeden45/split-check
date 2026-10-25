@@ -149,6 +149,8 @@ export function parseReceiptText(text: string): ParsedReceipt {
   // Items since the last group subtotal, to spot lines like "FOOD : $134.00".
   let groupStart = 0;
   let afterSubtotal = false;
+  // "TAX" on one line and "$22.56" alone on the next.
+  let pendingLabel: "subtotal" | "tax" | "total" | null = null;
 
   const addItem = (name: string, qty: number, priceCents: number) => {
     out.items.push({ name, qty, priceCents, kind: guessKind(name) });
@@ -177,6 +179,21 @@ export function parseReceiptText(text: string): ParsedReceipt {
     if (bare && isJunkTail(bare[2])) {
       const cents = priceToCents(bare[1]);
       if (cents === null) continue;
+      if (pendingLabel) {
+        const label = pendingLabel;
+        pendingLabel = null;
+        if (label === "subtotal") {
+          if (out.subtotalCents === null) out.subtotalCents = cents;
+          afterSubtotal = true;
+          continue;
+        }
+        if (label === "tax") {
+          out.taxCents = (out.taxCents ?? 0) + cents;
+          continue;
+        }
+        out.totalCents = cents;
+        break;
+      }
       const sumSoFar = out.items.reduce((a, i) => a + i.priceCents, 0);
       // A lone amount equal to everything so far is an unlabeled subtotal, not this line's price.
       if (pendingName && !afterSubtotal && cents !== 0 && !(out.items.length > 0 && cents === sumSoFar)) {
@@ -189,7 +206,19 @@ export function parseReceiptText(text: string): ParsedReceipt {
     }
 
     const m = LINE_RE.exec(line);
+    pendingLabel = null;
     if (!m) {
+      // A summary label whose amount is on the next line.
+      const label = cleanName(line);
+      if (label.length <= 24 && !/\d[.,]\d{2}/.test(label)) {
+        if (SUBTOTAL_RE.test(label)) pendingLabel = "subtotal";
+        else if (TAX_RE.test(label) && !TAXABLE_RE.test(label)) pendingLabel = "tax";
+        else if (TOTAL_RE.test(label) && !isSkipLine(label)) pendingLabel = "total";
+        if (pendingLabel) {
+          pendingName = null;
+          continue;
+        }
+      }
       // Possibly a description whose price is on the next line.
       const name = cleanName(line.replace(/^\d{1,2}\s+/, ""));
       const qty = /^(\d{1,2})\s+[A-Za-z]/.exec(line);
