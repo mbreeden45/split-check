@@ -32,6 +32,7 @@ export function venmoMessage(b: DinerBreakdown, tip: TipConfig, venue?: string, 
   out.push("");
   out.push(`Items: ${formatMoney(b.subtotalCents)}`);
   out.push(`Tax share: ${formatMoney(b.taxCents)}`);
+  if (b.feesCents !== 0) out.push(`Fees & discounts: ${formatMoney(b.feesCents)}`);
   out.push(`${tipLabel(tip)}: ${formatMoney(b.tipCents)}`);
   out.push(`Total: ${formatMoney(b.totalCents)}`);
   const pay = payBlock(handles, b.totalCents, paymentNote(venue));

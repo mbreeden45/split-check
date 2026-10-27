@@ -95,6 +95,21 @@ describe("computeSplit", () => {
   });
 });
 
+describe("fees and discounts", () => {
+  it("shares a net discount by item subtotal and keeps every total adding up", () => {
+    // Uber Eats: $54.08 of food, $7.29 tax, $0.49 fee - $0.49 - $20.00 promo, $4.63 tip = $46.00.
+    const items = [
+      item({ id: "Meat Lovers", priceCents: 3109, kind: "food", shares: { a: 1 } }),
+      item({ id: "Shish Kabob", priceCents: 2299, kind: "food", shares: { b: 1 } }),
+    ];
+    const r = computeSplit(items, diners.slice(0, 2), 729, { ...noTip, mode: "amount", amountCents: 463 }, -2000);
+    expect(r.grandTotalCents).toBe(4600);
+    expect(r.diners.map((d) => d.feesCents)).toEqual([-1150, -850]);
+    expect(r.diners.reduce((a, d) => a + d.totalCents, 0)).toBe(4600);
+    expect(venmoMessage(r.diners[0], { ...noTip, mode: "amount", amountCents: 463 })).toContain("Fees & discounts: -$11.50");
+  });
+});
+
 describe("venmoMessage", () => {
   it("never contains em or en dashes", () => {
     const items = [item({ id: "Fish Tacos", priceCents: 1400, kind: "food", shares: { a: 1, b: 1 } })];

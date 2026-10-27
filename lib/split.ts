@@ -17,6 +17,8 @@ export interface DinerBreakdown {
   drinkCents: number;
   subtotalCents: number;
   taxCents: number;
+  /** Share of fees minus discounts (delivery fee, promotions), by item subtotal. */
+  feesCents: number;
   tipCents: number;
   totalCents: number;
 }
@@ -27,6 +29,7 @@ export interface SplitResult {
   drinkTotalCents: number;
   itemsTotalCents: number;
   taxCents: number;
+  feesCents: number;
   tipCents: number;
   grandTotalCents: number;
   unassignedItems: LineItem[];
@@ -74,6 +77,7 @@ export function computeSplit(
   diners: Diner[],
   taxCents: number,
   tip: TipConfig,
+  feesCents = 0,
 ): SplitResult {
   const n = diners.length;
   const food = new Array<number>(n).fill(0);
@@ -128,11 +132,15 @@ export function computeSplit(
   // Tip follows each diner's full item subtotal (food plus drinks).
   const subtotals = diners.map((_, i) => food[i] + drink[i]);
   const tipParts = allocate(tipCents, [...subtotals, unassignedFood + unassignedDrink]);
+  // Fees and discounts (delivery fee, promotions) follow item subtotals too.
+  const fees = Math.round(feesCents);
+  const feeParts = allocate(fees, [...subtotals, unassignedFood + unassignedDrink]);
 
   const breakdowns: DinerBreakdown[] = diners.map((diner, i) => {
     const subtotalCents = subtotals[i];
     const t = taxParts[i] ?? 0;
     const p = tipParts[i] ?? 0;
+    const f = feeParts[i] ?? 0;
     return {
       diner,
       lines: lines[i],
@@ -140,13 +148,14 @@ export function computeSplit(
       drinkCents: drink[i],
       subtotalCents,
       taxCents: t,
+      feesCents: f,
       tipCents: p,
-      totalCents: subtotalCents + t + p,
+      totalCents: subtotalCents + t + f + p,
     };
   });
 
   const unassignedCents =
-    unassignedFood + unassignedDrink + (taxParts[n] ?? 0) + (tipParts[n] ?? 0);
+    unassignedFood + unassignedDrink + (taxParts[n] ?? 0) + (tipParts[n] ?? 0) + (feeParts[n] ?? 0);
 
   return {
     diners: breakdowns,
@@ -154,8 +163,9 @@ export function computeSplit(
     drinkTotalCents: drinkTotal,
     itemsTotalCents: itemsTotal,
     taxCents: tax,
+    feesCents: fees,
     tipCents,
-    grandTotalCents: itemsTotal + tax + tipCents,
+    grandTotalCents: itemsTotal + tax + fees + tipCents,
     unassignedItems,
     unassignedCents,
     taxFallback,
