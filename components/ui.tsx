@@ -88,11 +88,14 @@ export function MoneyInput({
   onChange,
   label,
   className = "",
+  allowNegative = false,
 }: {
   cents: number;
   onChange: (cents: number) => void;
   label: string;
   className?: string;
+  /** For discounts: keep a leading minus sign. */
+  allowNegative?: boolean;
 }) {
   const [text, setText] = useState(cents ? centsToInput(cents) : "");
   const [focused, setFocused] = useState(false);
@@ -105,7 +108,8 @@ export function MoneyInput({
     <input
       aria-label={label}
       className={`field-bare text-right tabular-nums ${className}`}
-      inputMode="decimal"
+      // The decimal keypad has no minus key, so discounts get the full keyboard.
+      inputMode={allowNegative ? "text" : "decimal"}
       enterKeyHint="done"
       placeholder="$0.00"
       value={focused ? text : cents ? formatMoney(cents) : ""}
@@ -116,7 +120,9 @@ export function MoneyInput({
         requestAnimationFrame(() => el.select());
       }}
       onChange={(e) => {
-        const v = e.target.value.replace(/[^0-9.,]/g, "");
+        const raw = e.target.value;
+        const negative = allowNegative && raw.trim().startsWith("-");
+        const v = (negative ? "-" : "") + raw.replace(/[^0-9.,]/g, "");
         setText(v);
         onChange(toCents(v) ?? 0);
       }}

@@ -17,6 +17,12 @@ export interface ParsedReceipt {
   taxRatePercent: number | null;
   /** True when the tax clearly covers drinks too, so every item was marked taxable. */
   drinksTaxed: boolean;
+  /** Fees minus discounts printed after the subtotal (delivery fee, service charge, promotions). */
+  adjustmentsCents: number;
+  /** A tip already charged on the receipt, as on delivery apps. Suggested tips are ignored. */
+  tipCents: number | null;
+  /** The tax line bundles fees ("Taxes & Fees"), so it isn't a sales tax rate. */
+  taxIncludesFees: boolean;
 }
 
 /**
@@ -41,7 +47,8 @@ const MODIFIER_RE = /^\s*[-+~=>*]+\s*[A-Za-z]/;
 
 const TAX_RE = /\b(tax(es)?|txtl|hst|gst|vat)\d*\b/i;
 const TAXABLE_RE = /\b(non-?)?taxable\b/i;
-const SUBTOTAL_RE = /\b(sub[\s\-/]*t(o)?t(a)?l|sbtl|subtl)\b|^net(\s+total)?$/i;
+// Also tolerates a dropped first letter: "ubtotal".
+const SUBTOTAL_RE = /\b(s?ub[\s\-/]*t(o)?t(a)?l|sbtl|subtl)\b|^net(\s+total)?$/i;
 const TOTAL_RE = /\b(total|totl|tota|amount\s+due|amt\s+due|balance\s+due|balance|due)\b/i;
 /** Category subtotals some POS systems print between groups of items. */
 const CATEGORY_RE = /^(food|foods|beverages?|bev|drinks?|bar|liquor|wine|beer|kitchen|alcohol|non-?alcoholic|items?|merchandise|retail|dessert|desserts|appetizers?|entrees?)\b/i;
@@ -51,6 +58,11 @@ const SKIP_START_RE =
 /** Suggested tip lines like "18%: (Tip $20.47 Total $134.17)" or "20% 13.85". */
 const PERCENT_LINE_RE = /^\d{1,2}(\.\d+)?\s*%/;
 const FEE_RE = /\b(service|serv|charge|fee)\b/i;
+/** Money added after the subtotal: delivery, service and other fees. */
+const ADD_ON_RE = /\b(fee|fees|service|serv|charge|surcharge|delivery|bag|packaging|small\s+order|convenience)\b/i;
+/** Money taken off after the subtotal. */
+const DISCOUNT_RE = /\b(discount|promo|promotion|coupon|offer|savings|credit|reward|rewards|comp|off)\b/i;
+const TIP_RE = /\b(tip|tips|gratuity)\b/i;
 
 const DRINK_RE =
   /\b(beer|ipa|bud|coors|miller|modelo|corona|pacifico|stella|guinness|heineken|michelob|pbr|yuengling|blue\s+moon|white\s+claw|truly|lager|pilsner|pils|stout|porter|ale|draft|draught|pint|can|bottle|seltzer|cider|wine|cab|cabernet|merlot|pinot|chardonnay|sauvignon|riesling|rose|prosecco|champagne|cava|sangria|margarita|marg|mojito|martini|negroni|spritz|mule|paloma|daiquiri|cocktail|old\s+fashioned|manhattan|highball|shot|shots|vodka|gin|rum|tequila|mezcal|whiskey|whisky|bourbon|scotch|rye|soda|pop|coke|diet|sprite|pepsi|ginger\s+ale|tonic|lemonade|iced\s+tea|tea|coffee|latte|espresso|cappuccino|juice|water|sparkling|kombucha|drink|bev|beverage|n\/?a\s+bev)\b/i;
@@ -138,6 +150,9 @@ export function parseReceiptText(text: string): ParsedReceipt {
     totalCents: null,
     taxRatePercent: null,
     drinksTaxed: false,
+    adjustmentsCents: 0,
+    tipCents: null,
+    taxIncludesFees: false,
   };
 
   // Every amount in reading order, so an unlabeled totals block can be found afterwards.
@@ -247,16 +262,25 @@ export function parseReceiptText(text: string): ParsedReceipt {
     if (TAXABLE_RE.test(name)) continue;
     if (TAX_RE.test(name)) {
       out.taxCents = (out.taxCents ?? 0) + priceCents;
+      if (/\bfees?\b/i.test(name)) out.taxIncludesFees = true;
       const rate = /(\d{1,2}(?:\.\d{1,3})?)\s*%/.exec(name);
       if (rate && out.taxRatePercent === null) out.taxRatePercent = parseFloat(rate[1]);
       continue;
     }
-    if (TOTAL_RE.test(name)) {
+    if (TOTAL_RE.test(name) && !DISCOUNT_RE.test(name)) {
       out.totalCents = priceCents;
+      // Delivery apps print the total first, above the items. Keep reading.
+      if (out.items.length === 0 && out.subtotalCents === null) continue;
       // Payment lines, tax summaries and discounts follow. Nothing after this is an item.
       break;
     }
-    if (afterSubtotal) continue;
+    if (afterSubtotal) {
+      // Between subtotal and total: charges that are part of what was actually paid.
+      if (TIP_RE.test(name)) out.tipCents = (out.tipCents ?? 0) + Math.abs(priceCents);
+      else if (DISCOUNT_RE.test(name)) out.adjustmentsCents -= Math.abs(priceCents);
+      else if (ADD_ON_RE.test(name)) out.adjustmentsCents += priceCents;
+      continue;
+    }
     if (isSkipLine(name, priceCents)) continue;
     if (!/[A-Za-z]{2,}/.test(name)) continue;
     if (priceCents === 0) continue;

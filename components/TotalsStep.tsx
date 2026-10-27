@@ -104,6 +104,11 @@ export default function TotalsStep({
         <Row label="Tax">
           <Money cents={result.taxCents} />
         </Row>
+        {result.feesCents !== 0 && (
+          <Row label="Fees & discounts">
+            <Money cents={result.feesCents} />
+          </Row>
+        )}
         <Row label={tipLabel(tip)}>
           <Money cents={result.tipCents} />
         </Row>
@@ -249,6 +254,11 @@ function PersonSection({
           <Row label="Tax">
             <Money cents={b.taxCents} />
           </Row>
+          {b.feesCents !== 0 && (
+            <Row label="Fees & discounts">
+              <Money cents={b.feesCents} />
+            </Row>
+          )}
           <Row label="Tip">
             <Money cents={b.tipCents} />
           </Row>

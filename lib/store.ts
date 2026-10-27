@@ -19,6 +19,14 @@ export interface CheckState {
   items: LineItem[];
   diners: Diner[];
   taxCents: number;
+  /** Fees minus discounts (delivery fee, service charge, promotions). Can be negative. */
+  feesCents: number;
+  /** A tip already charged on the receipt (delivery apps), so the printed total includes it. */
+  receiptTipCents: number | null;
+  /** The receipt's tax line includes fees, so the tax rate check doesn't apply. */
+  taxIncludesFees: boolean;
+  /** The person tapped Ignore on the receipt-total check. */
+  totalHintDismissed: boolean;
   /** Values read off the receipt, used only to flag mismatches. */
   printedSubtotalCents: number | null;
   printedTotalCents: number | null;
@@ -39,6 +47,10 @@ export const initialState: CheckState = {
   items: [],
   diners: [],
   taxCents: 0,
+  feesCents: 0,
+  receiptTipCents: null,
+  taxIncludesFees: false,
+  totalHintDismissed: false,
   printedSubtotalCents: null,
   printedTotalCents: null,
   printedTaxRatePercent: null,
@@ -60,7 +72,12 @@ export type Action =
       totalCents: number | null;
       taxRatePercent: number | null;
       drinksTaxed: boolean;
+      adjustmentsCents: number;
+      tipCents: number | null;
+      taxIncludesFees: boolean;
     }
+  | { type: "fees"; cents: number }
+  | { type: "dismissTotalHint" }
   | { type: "applyTaxSuggestion"; includedIds: string[] }
   | { type: "dismissTaxHint" }
   | { type: "togglePaid"; dinerId: string }
@@ -108,6 +125,15 @@ export function reducer(state: CheckState, action: Action): CheckState {
         step: "items",
         items: action.items.map((p) => newItem({ ...p })),
         taxCents: action.taxCents ?? 0,
+        feesCents: action.adjustmentsCents,
+        receiptTipCents: action.tipCents,
+        taxIncludesFees: action.taxIncludesFees,
+        totalHintDismissed: false,
+        // A tip already charged on the receipt (delivery apps) becomes the tip, as a dollar amount.
+        tip:
+          action.tipCents !== null && action.tipCents > 0
+            ? { ...state.tip, mode: "amount", amountCents: action.tipCents }
+            : state.tip,
         printedSubtotalCents: action.subtotalCents,
         printedTotalCents: action.totalCents,
         printedTaxRatePercent: action.taxRatePercent,
@@ -181,6 +207,10 @@ export function reducer(state: CheckState, action: Action): CheckState {
       return mapItem(state, action.itemId, (i) => ({ ...i, shares: {} }));
     case "tax":
       return { ...state, taxCents: Math.max(0, action.cents) };
+    case "fees":
+      return { ...state, feesCents: action.cents };
+    case "dismissTotalHint":
+      return { ...state, totalHintDismissed: true };
     case "tip":
       return { ...state, tip: { ...state.tip, ...action.patch } };
     case "reset":

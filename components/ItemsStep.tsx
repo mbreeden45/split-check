@@ -5,6 +5,7 @@ import { useState, type Dispatch } from "react";
 import type { Action, CheckState } from "@/lib/store";
 import type { ItemKind } from "@/lib/types";
 import type { TaxInsight } from "@/lib/taxcheck";
+import { formatMoney } from "@/lib/money";
 import { Icon, Money, MoneyInput, Row, Section, Segmented, haptic } from "./ui";
 
 export default function ItemsStep({
@@ -26,6 +27,18 @@ export default function ItemsStep({
   const mismatch =
     state.printedSubtotalCents !== null && state.printedSubtotalCents !== itemsTotal
       ? state.printedSubtotalCents - itemsTotal
+      : null;
+
+  // Once the items match the printed subtotal, the printed total should match too. A gap means a
+  // fee, discount or promotion line was missed. Only then, so it never papers over a wrong item.
+  const expectedTotal = itemsTotal + state.taxCents + state.feesCents + (state.receiptTipCents ?? 0);
+  const totalGap =
+    state.printedTotalCents !== null &&
+    state.items.length > 0 &&
+    mismatch === null &&
+    state.printedTotalCents !== expectedTotal &&
+    Math.abs(state.printedTotalCents - expectedTotal) < Math.max(2500, expectedTotal * 0.25)
+      ? state.printedTotalCents - expectedTotal
       : null;
 
   const add = (kind: ItemKind) => {
@@ -141,8 +154,33 @@ export default function ItemsStep({
         </button>
       </Section>
 
-      {taxInsight.message && !state.taxHintDismissed && (
+      {taxInsight.message && !state.taxHintDismissed && !state.taxIncludesFees && (
         <TaxHint insight={taxInsight} dispatch={dispatch} className={side} />
+      )}
+
+      {totalGap !== null && !state.totalHintDismissed && (
+        <div role="status" className={`group mb-8 ${side}`}>
+          <p className="px-4 pb-2 pt-3 text-[15px]">
+            <span className="font-semibold text-warn">Check the total. </span>
+            The receipt total is <Money cents={state.printedTotalCents ?? 0} />, but these add up to{" "}
+            <Money cents={expectedTotal} />. A fee, discount or promotion may be missing.
+          </p>
+          <div className="flex items-center gap-4 border-t border-sep px-4">
+            <button
+              type="button"
+              className="link font-semibold"
+              onClick={() => {
+                haptic([8, 30, 8]);
+                dispatch({ type: "fees", cents: state.feesCents + totalGap });
+              }}
+            >
+              {`Add ${formatMoney(totalGap)} to Fees & Discounts`}
+            </button>
+            <button type="button" className="link ml-auto text-label-2" onClick={() => dispatch({ type: "dismissTotalHint" })}>
+              Ignore
+            </button>
+          </div>
+        </div>
       )}
 
       <Section
@@ -155,7 +193,7 @@ export default function ItemsStep({
               <Money cents={Math.abs(mismatch)} /> {mismatch > 0 ? "short. An item may be missing." : "over. Check for duplicates."}
             </span>
           ) : (
-            "Tax is only split among people with taxable items."
+            "Tax is only split among people with taxable items. Fees and discounts are shared by what each person ordered."
           )
         }
       >
@@ -169,16 +207,26 @@ export default function ItemsStep({
           <span>Tax</span>
           <MoneyInput label="Tax" cents={state.taxCents} onChange={(cents) => dispatch({ type: "tax", cents })} className="w-32 text-accent" />
         </label>
+        <label className="flex min-h-11 items-center justify-between gap-3 px-4">
+          <span>Fees &amp; Discounts</span>
+          <MoneyInput
+            label="Fees and discounts"
+            cents={state.feesCents}
+            onChange={(cents) => dispatch({ type: "fees", cents })}
+            className="w-32 text-accent"
+            allowNegative
+          />
+        </label>
         {taxInsight.rate !== null && (
           <Row label="Tax Rate">
-            <span className={taxInsight.status === "ok" ? "" : "font-semibold text-warn"}>
+            <span className={taxInsight.status === "ok" || state.taxIncludesFees ? "" : "font-semibold text-warn"}>
               {(taxInsight.rate * 100).toFixed(1)}%
               {state.printedTaxRatePercent ? ` (receipt says ${state.printedTaxRatePercent}%)` : ""}
             </span>
           </Row>
         )}
         <Row label="Total Before Tip" strong>
-          <Money cents={itemsTotal + state.taxCents} />
+          <Money cents={itemsTotal + state.taxCents + state.feesCents} />
         </Row>
       </Section>
     </div>

@@ -221,3 +221,33 @@ describe("summary labels wrapped onto two lines", () => {
     expect([r.subtotalCents, r.taxCents, r.totalCents]).toEqual([2175, 207, 2382]);
   });
 });
+
+// Uber Eats receipt screenshot, as read by PaddleOCR.
+const UBER = `Total $46.00
+1 Meat Lovers $31.09
+1 Charbroiled Chicken Shish Kabob $22.99
+Item Subtotal $54.08
+Delivery Fee $0.49
+Taxes & Fees $7.29
+Tip $4.63
+Delivery Discount -$0.49
+Promotion -$20.00`;
+
+describe("delivery app receipt: Uber Eats", () => {
+  const r = parseReceiptText(UBER);
+  it("keeps reading past a total printed above the items", () => {
+    expect(r.items.map((i) => [i.name, i.priceCents])).toEqual([
+      ["Meat Lovers", 3109],
+      ["Charbroiled Chicken Shish Kabob", 2299],
+    ]);
+    expect(r.subtotalCents).toBe(5408);
+    expect(r.totalCents).toBe(4600);
+  });
+  it("reads tax, fees, discounts and the charged tip so the total adds up", () => {
+    expect(r.taxCents).toBe(729);
+    expect(r.adjustmentsCents).toBe(49 - 49 - 2000);
+    expect(r.tipCents).toBe(463);
+    expect(r.taxIncludesFees).toBe(true);
+    expect(r.subtotalCents! + r.taxCents! + r.adjustmentsCents + r.tipCents!).toBe(r.totalCents);
+  });
+});

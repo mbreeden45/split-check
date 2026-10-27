@@ -45,8 +45,8 @@ export default function SplitApp() {
   const photoUrlRef = useRef<string | null>(null);
 
   const result = useMemo(
-    () => computeSplit(state.items, state.diners, state.taxCents, state.tip),
-    [state.items, state.diners, state.taxCents, state.tip],
+    () => computeSplit(state.items, state.diners, state.taxCents, state.tip, state.feesCents),
+    [state.items, state.diners, state.taxCents, state.tip, state.feesCents],
   );
 
   // Read after mount so the server render and first client render match.
@@ -153,6 +153,9 @@ export default function SplitApp() {
           totalCents: parsed.totalCents,
           taxRatePercent: parsed.taxRatePercent,
           drinksTaxed: parsed.drinksTaxed,
+          adjustmentsCents: parsed.adjustmentsCents,
+          tipCents: parsed.tipCents,
+          taxIncludesFees: parsed.taxIncludesFees,
         });
         setScan({ phase: "idle" });
         haptic([10, 40, 10]);
